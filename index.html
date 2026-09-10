@@ -350,6 +350,39 @@ table.plans td input:focus, table.plans td select:focus{outline:none; background
 }
 .evalrow .cmt:focus{outline:none; border-bottom-color:var(--accent)}
 
+/* ---------- 캘린더 ---------- */
+.calgrid{display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:var(--line);
+  border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
+.calhead{background:var(--surface-2); text-align:center; padding:7px 0; font-size:12px; font-weight:700; color:var(--ink-2)}
+.calhead.sun{color:var(--danger)} .calhead.sat{color:var(--info)}
+.calcell{background:var(--surface); min-height:98px; padding:5px 6px 7px; display:flex; flex-direction:column; gap:2px}
+.calcell.blank{background:var(--surface-2)}
+.calcell.today{background:var(--accent-soft)}
+.calcell .cnum{font-family:var(--mono); font-size:12px; color:var(--ink-3); margin-bottom:2px}
+.calcell.sun .cnum{color:var(--danger)} .calcell.sat .cnum{color:var(--info)}
+.calcell.today .cnum{color:var(--accent); font-weight:700}
+.cev{font-size:11.5px; line-height:1.4; padding:2px 6px; border-radius:5px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; border:1px solid transparent}
+.cev b{font-family:var(--mono); font-weight:500; font-size:10.5px}
+.cev.my{background:var(--accent-soft); color:var(--accent); border-color:color-mix(in srgb,var(--accent) 25%,transparent)}
+.cev.school{background:var(--info-soft); color:var(--info)}
+.cev.due{background:var(--warn-soft); color:var(--warn); font-weight:700}
+.cev.g{background:var(--surface-2); color:var(--ink-3); border-color:var(--line)}
+.cmore{font-size:10.5px; color:var(--ink-3); padding-left:6px}
+
+/* ---------- 배움기록 ---------- */
+.lrrow{border:1px solid var(--line); border-radius:8px; padding:10px 11px; margin-bottom:9px; background:var(--surface-2)}
+.lrrow:last-child{margin-bottom:0}
+.lrhead{display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:7px}
+.lrrow input{border:1px solid var(--line); background:var(--surface); border-radius:6px; padding:5px 8px; font-size:13px; min-width:0}
+.lrrow input:focus{outline:none; border-color:var(--accent)}
+.lrrow .lrkind{width:92px}
+.lrrow .lrtitle{flex:1; min-width:170px; font-weight:500}
+.lrrow .lrhost{width:130px}
+.lrrow .lrhours{width:70px; text-align:right; font-family:var(--mono)}
+.lrrow textarea.input{background:var(--surface)}
+.lrrow .csfollow{margin-top:6px; width:100%; background:var(--surface)}
+
 /* ---------- 업무·예산 ---------- */
 .duelist{display:flex; flex-direction:column; gap:5px}
 .dueitem{
@@ -569,6 +602,8 @@ table.roster tr:hover td .btn.ghost{opacity:1}
     <button class="navbtn" data-tab="lesson"><i>▥</i>수업</button>
     <button class="navbtn" data-tab="eval"><i>◈</i>평가</button>
     <button class="navbtn" data-tab="task"><i>✦</i>업무·예산</button>
+    <button class="navbtn" data-tab="cal"><i>▧</i>캘린더</button>
+    <button class="navbtn" data-tab="learn"><i>✧</i>배움기록</button>
     <button class="navbtn" data-tab="att"><i>▦</i>출결</button>
     <button class="navbtn" data-tab="obs"><i>✎</i>학생 기록</button>
     <button class="navbtn" data-tab="tt"><i>▤</i>시간표</button>
@@ -603,7 +638,7 @@ table.roster tr:hover td .btn.ghost{opacity:1}
    비워 두어도 됩니다. (앱의 설정 탭에서도 넣을 수 있습니다)
    ======================================================================= */
 var CONFIG = {
-  API_URL: "https://script.google.com/macros/s/AKfycbxUodZzPdR7ND4ARONaQNOiMIH7S8bjKQC6597dVf285E6gmu_Ui7KCzqKelefNhiMXDQ/exec"
+  API_URL: "https://script.google.com/macros/s/AKfycbz8A8f-sljWK9dqDUe8BPYdk7s0x-6xRvVtK6IIKF9jZLd84CqUEVYwSt0IDrepXAlMSw/exec"
 };
 
 /* ===================== utils ===================== */
@@ -751,6 +786,13 @@ var S = {
   budgets: [],            /* [{id, name, source, amount, note}] */
   spends: [],             /* [{id, date, budget, item, amount, proof, note}] */
   counsel: [],            /* [{id, sid, date, target, way, text, follow}] */
+  events: [],             /* [{id, date, end, time, title, kind, place, memo, cal}] */
+  learn: [],              /* [{id, date, kind, title, host, hours, form, learned, apply, proof}] */
+  calMonth: ymOf(todayISO()),
+  gcal: {},               /* "YYYY-MM" -> [{title,date,time,place}] — 구글 캘린더에서 읽어온 것 */
+  gcalName: "",
+  gcalBusy: false,
+  learnYear: "",
   taskFilter: "open",
   cardMode: "행동",
   cardDraft: "",
@@ -786,7 +828,8 @@ var TABS = {
   students:"학생", att:"출결", journal:"학급일지",
   obs:"누가기록", tt:"시간표", seat:"자리배치", info:"학급정보",
   lessons:"수업기록", plans:"평가계획", scores:"평가기록",
-  tasks:"업무", budgets:"예산", spends:"예산집행", counsel:"상담기록"
+  tasks:"업무", budgets:"예산", spends:"예산집행", counsel:"상담기록",
+  events:"일정", learn:"배움기록"
 };
 var dirty = {}, saveTimer = null, savedAt = null, saving = false, saveFailed = false;
 
@@ -795,7 +838,7 @@ function markDirty(){
   mirrorLocal();
   setChip("saving");
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(pushSave, 1200);
+  saveTimer = setTimeout(pushSave, 2200);
 }
 function pushSave(){
   clearTimeout(saveTimer);
@@ -808,10 +851,12 @@ function pushSave(){
   keys.forEach(function(k){ tabs[TABS[k]] = buildTab(k); });
   dirty = {};
   setChip("saving");
-  return api.call({action:"save", tabs:tabs, base:{att:S.baseAtt, obs:S.baseObs}}).then(function(){
+  return api.call({action:"save", tabs:tabs, base:{att:S.baseAtt, obs:S.baseObs}}).then(function(j){
     /* 저장한 내용이 새 기준이 됩니다 */
     if (tabs[TABS.att]) S.baseAtt = attKeys();
     if (tabs[TABS.obs]) S.baseObs = obsKeys();
+    /* 방금 내가 쓴 내용이므로, 새 표시를 기억해 두면 다음에 열 때 다시 읽지 않습니다 */
+    if (j && j.ver) lsSet("classlog:ver", j.ver); else lsDel("classlog:ver");
     saving = false; saveFailed = false; savedAt = new Date(); setChip();
   }).catch(function(err){
     saving = false; saveFailed = true;
@@ -824,6 +869,7 @@ function setChip(state){
   var el = $("#saveChip");
   if (!el) return;
   if (state === "saving"){ el.dataset.state = "saving"; el.textContent = "저장 중…"; el.title = ""; return; }
+  if (state === "checking"){ el.dataset.state = "saving"; el.textContent = "시트 확인 중…"; el.title = ""; return; }
   if (state === "error" || saveFailed){
     el.dataset.state = "error";
     el.textContent = "시트에 저장 못함 — 눌러 다시 시도";
@@ -847,7 +893,8 @@ function mirrorLocal(){
   lsSet("classlog:snapshot", JSON.stringify({
     cls:S.cls, roster:S.roster, days:S.days, att:S.att, obs:S.obs, tt:S.tt, seat:S.seat, demo:S.demo,
     lessons:S.lessons, plans:S.plans, scores:S.scores,
-    tasks:S.tasks, budgets:S.budgets, spends:S.spends, counsel:S.counsel
+    tasks:S.tasks, budgets:S.budgets, spends:S.spends, counsel:S.counsel,
+    events:S.events, learn:S.learn
   }));
 }
 function readLocal(){
@@ -875,6 +922,25 @@ function buildTab(key){
       });
     });
     return r2;
+  }
+  if (key === "events"){
+    var re = [["날짜","종료일","시간","일정","구분","장소","메모","캘린더"]];
+    S.events.slice().sort(function(a,b){ return String(a.date).localeCompare(String(b.date)); })
+      .forEach(function(e){
+        if (!String(e.title||"").trim()) return;
+        re.push([e.date||"", e.end||"", e.time||"", e.title, e.kind||"", e.place||"", e.memo||"", e.cal||""]);
+      });
+    return re;
+  }
+  if (key === "learn"){
+    var rl = [["날짜","구분","제목","주최","이수시간","형태","배운 점","적용 계획","증빙"]];
+    S.learn.slice().sort(function(a,b){ return String(a.date).localeCompare(String(b.date)); })
+      .forEach(function(x){
+        if (!String(x.title||"").trim()) return;
+        rl.push([x.date||"", x.kind||"", x.title, x.host||"", x.hours||"", x.form||"",
+                 x.learned||"", x.apply||"", x.proof||""]);
+      });
+    return rl;
   }
   if (key === "counsel"){
     var rd = [["날짜","번호","이름","대상","방법","내용","후속조치"]];
@@ -1104,6 +1170,21 @@ function hydrate(data){
     };
   }).filter(function(p){ return p.name; });
 
+  S.events = (t[TABS.events] || []).slice(1).map(function(r){
+    return { id: uid(), date: String(r[0]||"").trim(), end: String(r[1]||"").trim(),
+             time: String(r[2]||"").trim(), title: String(r[3]||"").trim(),
+             kind: String(r[4]||"").trim(), place: String(r[5]||"").trim(),
+             memo: String(r[6]==null?"":r[6]), cal: String(r[7]||"").trim() };
+  }).filter(function(e){ return e.title; });
+
+  S.learn = (t[TABS.learn] || []).slice(1).map(function(r){
+    return { id: uid(), date: String(r[0]||"").trim(), kind: String(r[1]||"").trim(),
+             title: String(r[2]||"").trim(), host: String(r[3]||"").trim(),
+             hours: String(r[4]||"").trim(), form: String(r[5]||"").trim(),
+             learned: String(r[6]==null?"":r[6]), apply: String(r[7]==null?"":r[7]),
+             proof: String(r[8]||"").trim() };
+  }).filter(function(x){ return x.title; });
+
   S.counsel = (t[TABS.counsel] || []).slice(1).map(function(r){
     var sid = byNoMap[parseInt(r[1],10)];
     if (!sid) return null;
@@ -1207,6 +1288,8 @@ function hydrateLocal(snap){
   S.budgets = snap.budgets || [];
   S.spends = snap.spends || [];
   S.counsel = snap.counsel || [];
+  S.events = snap.events || [];
+  S.learn = snap.learn || [];
 }
 function autoSeats(rows, cols, roster){
   var cells=[], n=rows*cols, list=(roster||[]).slice().sort(byNo);
@@ -1249,14 +1332,32 @@ function boot(){
 
   if (!api.url){
     S.mode = "local";
-    if (snap) hydrateLocal(snap); else hydrateLocal({});
+    hydrateLocal(snap || {});
     start();
     return;
   }
   if (!api.token){ showGate(""); return; }
+
+  /* ① 마지막으로 본 내용으로 화면을 먼저 띄웁니다 — 기다리지 않게 */
+  if (snap && snap.roster && snap.roster.length){
+    hydrateLocal(snap);
+    S.mode = "sheet";
+    start();
+    setChip("checking");
+    /* ② 시트가 그 사이 바뀌었는지만 가볍게 물어봅니다 */
+    api.call({action:"ver"}).then(function(j){
+      var seen = lsGet("classlog:ver") || "";
+      if (j.ver && j.ver === seen){ setChip(); return; }   /* 그대로면 다시 읽지 않습니다 */
+      return loadFromSheet().then(render);
+    }).catch(function(err){
+      saveFailed = true; S.lastError = apiMessage(err); setChip("error");
+    });
+    return;
+  }
+
+  /* 처음 여는 기기라면 전부 읽어옵니다 */
   loadFromSheet().then(start).catch(function(err){
     if (err && err.code === "bad_token"){ showGate(apiMessage(err)); return; }
-    /* 연결이 안 되면 마지막으로 본 내용으로라도 일합니다 */
     S.mode = "local"; saveFailed = true; S.lastError = apiMessage(err);
     hydrateLocal(snap || {});
     start();
@@ -1266,6 +1367,7 @@ function loadFromSheet(){
   return api.call({action:"load"}).then(function(j){
     S.mode = "sheet"; S.online = true; saveFailed = false;
     hydrate(j.data);
+    if (j.data && j.data.ver) lsSet("classlog:ver", j.data.ver);
     mirrorLocal();
   });
 }
@@ -1311,6 +1413,8 @@ var TITLES = {
   lesson:["수업","한 주의 수업 계획과 기록을 한 화면에"],
   eval:["평가","평가계획과 학생별 평가 기록"],
   task:["업무·예산","마감이 있는 업무와 사업별 예산"],
+  cal:["캘린더","내 일정 · 학급 행사 · 업무 마감을 한 달에"],
+  learn:["배움기록","연수 · 강의 · 독서와 이수시간"],
   att:["출결","월별 출결 현황과 누계"],
   obs:["학생 기록","한 학생의 출결·평가·누가기록·상담을 한 화면에"],
   tt:["시간표","주간 시간표"],
@@ -1330,6 +1434,8 @@ function render(){
   else if (S.tab === "lesson") v.innerHTML = viewLesson();
   else if (S.tab === "eval") v.innerHTML = viewEval();
   else if (S.tab === "task") v.innerHTML = viewTask();
+  else if (S.tab === "cal") v.innerHTML = viewCal();
+  else if (S.tab === "learn") v.innerHTML = viewLearn();
   else if (S.tab === "att") v.innerHTML = viewAtt();
   else if (S.tab === "obs") v.innerHTML = viewObs();
   else if (S.tab === "tt") v.innerHTML = viewTT();
@@ -1531,7 +1637,7 @@ function viewLesson(){
 
   h += '<tr class="meta"><th class="rowlab">행사</th>';
   days.forEach(function(dt){
-    h += '<td'+(dt===today?' class="todaycol"':'')+'><input class="evt" data-act="ev" data-d="'+dt+'" value="'+esc((S.days[dt]||{}).event||"")+'" placeholder="—"></td>';
+    h += '<td'+(dt===today?' class="todaycol"':'')+'><input class="evt" data-act="wk-ev" data-d="'+dt+'" value="'+esc((S.days[dt]||{}).event||"")+'" placeholder="—"></td>';
   });
   h += '</tr>';
 
@@ -1572,6 +1678,170 @@ function viewLesson(){
   h += '<p style="font-size:12.5px; color:var(--ink-3); margin-top:12px; line-height:1.7">'+
     '다음 주에 미리 적어 두면 <b>수업 계획</b>이 되고, 지나고 나서 고치면 <b>수업 기록</b>이 됩니다. 시트의 「수업기록」 탭에 날짜·교시별로 쌓입니다.<br>'+
     '교과 칸을 비워 두면 시간표의 과목이 그대로 들어갑니다. 전담이나 행사로 바뀐 날만 고쳐 주세요.</p>';
+  return h;
+}
+
+/* ===================== view: 캘린더 ===================== */
+var EVENT_KINDS = ["학교","학년","학급","연수","개인","출장"];
+function eventsOn(dt){
+  var out = [];
+  S.events.forEach(function(e){
+    if (!isDate(e.date)) return;
+    if (isDate(e.end) && e.end > e.date){ if (dt < e.date || dt > e.end) return; }
+    else if (e.date !== dt) return;
+    out.push({t:"my", title:e.title, time:e.time, kind:e.kind, id:e.id});
+  });
+  var d = S.days[dt];
+  if (d && (d.event||"").trim()) out.push({t:"school", title:d.event});
+  S.tasks.forEach(function(k){
+    if (k.due === dt && k.status !== "완료") out.push({t:"due", title:k.name});
+  });
+  (S.gcal[ymOf(dt)]||[]).forEach(function(g){
+    var inRange = g.end && g.end > g.date ? (dt >= g.date && dt <= g.end) : (g.date === dt);
+    if (inRange) out.push({t:"g", title:g.title, time:g.time});
+  });
+  return out;
+}
+function viewCal(){
+  var ym = S.calMonth, p = ym.split("-"), n = daysInMonth(ym);
+  var first = dowOf(ym+"-01");
+  var today = todayISO();
+  var h = "";
+
+  h += '<div class="row" style="margin-bottom:14px">'+
+    '<button class="iconbtn" data-act="cal-prev" aria-label="이전 달">‹</button>'+
+    '<b style="font-family:var(--serif); font-size:19px">'+p[0]+'년 '+(+p[1])+'월</b>'+
+    '<button class="iconbtn" data-act="cal-next" aria-label="다음 달">›</button>'+
+    '<button class="btn tiny ghost" data-act="cal-now">이번 달</button>'+
+    '<span class="spacer" style="margin-left:auto"></span>'+
+    '<button class="btn tiny" data-act="gcal-pull"'+(S.gcalBusy?' disabled':'')+'>'+
+      (S.gcalBusy?'불러오는 중…':'구글 캘린더 불러오기')+'</button>'+
+    '<button class="btn tiny primary" data-act="ev-add">＋ 일정</button></div>';
+
+  if (S.gcalName){
+    h += '<p style="font-size:12.5px; color:var(--ink-3); margin:-6px 0 12px">'+
+      '구글 캘린더 「'+esc(S.gcalName)+'」의 일정을 함께 보고 있습니다. 회색으로 표시된 것이 구글 캘린더 일정입니다.</p>';
+  }
+
+  h += '<div class="calgrid">';
+  ["일","월","화","수","목","금","토"].forEach(function(w,i){
+    h += '<div class="calhead'+(i===0?' sun':i===6?' sat':'')+'">'+w+'</div>';
+  });
+  for (var b=0;b<first;b++) h += '<div class="calcell blank"></div>';
+  for (var i2=1;i2<=n;i2++){
+    var dt = ym+"-"+pad(i2), w2 = dowOf(dt);
+    var items = eventsOn(dt);
+    h += '<div class="calcell'+(dt===today?' today':'')+(w2===0?' sun':w2===6?' sat':'')+'">'+
+      '<div class="cnum">'+i2+'</div>';
+    items.slice(0,5).forEach(function(x){
+      h += '<div class="cev '+x.t+'" title="'+esc(x.title)+'">'+
+        (x.time?'<b>'+esc(x.time)+'</b> ':'')+esc(x.title)+'</div>';
+    });
+    if (items.length > 5) h += '<div class="cmore">+'+(items.length-5)+'</div>';
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '<div class="legend" style="margin-top:10px">'+
+    '<span><i style="background:var(--accent-soft); border:1px solid var(--accent)"></i>내 일정</span>'+
+    '<span><i style="background:var(--info-soft); border:1px solid var(--info)"></i>학급 행사</span>'+
+    '<span><i style="background:var(--warn-soft); border:1px solid var(--warn)"></i>업무 마감</span>'+
+    '<span><i style="background:var(--surface-2); border:1px solid var(--line-strong)"></i>구글 캘린더</span></div>';
+
+  /* 이 달 일정 목록 */
+  var mine = S.events.filter(function(e){ return ymOf(e.date) === ym; })
+    .sort(function(a,b){ return String(a.date+a.time).localeCompare(String(b.date+b.time)); });
+  h += '<section class="panel" style="margin-top:16px"><header><h2>이 달 내 일정</h2>'+
+    '<span class="sub">'+mine.length+'건</span><span class="spacer"></span>'+
+    (mine.length ? '<button class="btn tiny" data-act="gcal-push"'+(S.gcalBusy?' disabled':'')+'>구글 캘린더로 보내기</button>' : '')+
+    '</header><div class="pbody">';
+  if (!mine.length) h += '<p class="empty">이 달에 적어 둔 일정이 없습니다. 위의 ＋ 일정으로 추가해 보세요.</p>';
+  else {
+    h += '<div class="tablewrap" style="border:0; box-shadow:none"><table class="tasks"><thead><tr>'+
+      '<th style="width:130px">날짜</th><th style="width:118px">종료일</th><th style="width:78px">시간</th>'+
+      '<th style="min-width:180px">일정</th><th style="width:88px">구분</th><th style="width:120px">장소</th>'+
+      '<th style="min-width:140px">메모</th><th style="width:34px"></th></tr></thead><tbody>';
+    mine.forEach(function(e){
+      h += '<tr><td><input type="date" data-act="ev" data-id="'+e.id+'" data-k="date" value="'+esc(isDate(e.date)?e.date:"")+'"></td>'+
+        '<td><input type="date" data-act="ev" data-id="'+e.id+'" data-k="end" value="'+esc(isDate(e.end)?e.end:"")+'"></td>'+
+        '<td><input data-act="ev" data-id="'+e.id+'" data-k="time" value="'+esc(e.time)+'" placeholder="14:00"></td>'+
+        '<td><input data-act="ev" data-id="'+e.id+'" data-k="title" value="'+esc(e.title)+'" placeholder="일정"></td>'+
+        '<td><input data-act="ev" data-id="'+e.id+'" data-k="kind" value="'+esc(e.kind)+'" list="eventKinds" placeholder="—"></td>'+
+        '<td><input data-act="ev" data-id="'+e.id+'" data-k="place" value="'+esc(e.place)+'" placeholder="—"></td>'+
+        '<td><input data-act="ev" data-id="'+e.id+'" data-k="memo" value="'+esc(e.memo)+'" placeholder="—"></td>'+
+        '<td style="text-align:right"><button class="btn tiny ghost" data-act="ev-del" data-id="'+e.id+'" aria-label="삭제">✕</button></td></tr>';
+    });
+    h += '</tbody></table></div>';
+  }
+  h += '<datalist id="eventKinds">'+EVENT_KINDS.map(function(k){ return '<option value="'+k+'">'; }).join("")+'</datalist>';
+  h += '<p style="font-size:12.5px; color:var(--ink-3); margin:12px 0 0; line-height:1.7">'+
+    '시간을 적으면 그 시각 1시간 일정으로, 비우면 하루 종일 일정으로 구글 캘린더에 들어갑니다. '+
+    '종료일을 적으면 여러 날에 걸친 일정이 됩니다.<br>'+
+    '<b>구글 캘린더로 보내기</b>는 이 달 일정을 캘린더에 새로 만듭니다. 두 번 누르면 두 번 생기니 한 번만 눌러 주세요.</p>';
+  h += '</div></section>';
+  return h;
+}
+
+/* ===================== view: 배움기록 ===================== */
+var LEARN_KINDS = ["직무연수","자율연수","강의","학회","독서","컨설팅","기타"];
+var LEARN_FORMS = ["대면","온라인","혼합"];
+function viewLearn(){
+  var years = {};
+  S.learn.forEach(function(x){ if (isDate(x.date)) years[x.date.slice(0,4)] = 1; });
+  var yList = Object.keys(years).sort().reverse();
+  if (!S.learnYear || (yList.length && yList.indexOf(S.learnYear) < 0)) S.learnYear = yList[0] || String(new Date().getFullYear());
+
+  var inYear = S.learn.filter(function(x){ return x.date.slice(0,4) === S.learnYear; });
+  var hours = 0;
+  inYear.forEach(function(x){ var v = parseFloat(String(x.hours).replace(/[^0-9.]/g,"")); if (!isNaN(v)) hours += v; });
+  var byKind = {};
+  inYear.forEach(function(x){
+    var k = x.kind || "기타";
+    var v = parseFloat(String(x.hours).replace(/[^0-9.]/g,""));
+    if (!byKind[k]) byKind[k] = {n:0, h:0};
+    byKind[k].n++; if (!isNaN(v)) byKind[k].h += v;
+  });
+
+  var h = '<div class="row" style="margin-bottom:14px">'+
+    '<span style="font-size:13px; color:var(--ink-3)">연도</span>'+
+    '<select class="input" id="learnYear" style="width:auto; padding:5px 10px; font-size:13px">'+
+      (yList.length ? yList : [S.learnYear]).map(function(y){
+        return '<option'+(y===S.learnYear?' selected':'')+'>'+y+'</option>';
+      }).join("")+
+    '</select>'+
+    '<span class="spacer" style="margin-left:auto"></span>'+
+    '<button class="btn tiny primary" data-act="lr-add">＋ 기록</button></div>';
+
+  h += '<div class="summary" style="margin-bottom:16px"><span><b>'+inYear.length+'</b>건</span>'+
+    '<span>이수시간 <b>'+(Math.round(hours*10)/10)+'</b>시간</span>'+
+    Object.keys(byKind).map(function(k){
+      return '<span class="gchip info">'+esc(k)+' <b>'+byKind[k].n+'</b></span>';
+    }).join("")+'</div>';
+
+  h += '<section class="panel"><header><h2>배움 기록</h2><span class="sub">연수 · 강의 · 독서</span></header><div class="pbody">';
+  if (!inYear.length) h += '<p class="empty">들으신 연수나 강의를 남겨 두면 한 해 이수시간이 자동으로 모입니다. 대외활동 정리에도 그대로 쓰실 수 있습니다.</p>';
+  else {
+    inYear.slice().sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); }).forEach(function(x){
+      h += '<div class="lrrow">'+
+        '<div class="lrhead">'+
+          '<input type="date" class="csdate" data-act="lr" data-id="'+x.id+'" data-k="date" value="'+esc(isDate(x.date)?x.date:"")+'">'+
+          '<input class="lrkind" data-act="lr" data-id="'+x.id+'" data-k="kind" value="'+esc(x.kind)+'" list="learnKinds" placeholder="구분">'+
+          '<input class="lrtitle" data-act="lr" data-id="'+x.id+'" data-k="title" value="'+esc(x.title)+'" placeholder="연수·강의 제목">'+
+          '<input class="lrhost" data-act="lr" data-id="'+x.id+'" data-k="host" value="'+esc(x.host)+'" placeholder="주최">'+
+          '<input class="lrhours" data-act="lr" data-id="'+x.id+'" data-k="hours" value="'+esc(x.hours)+'" inputmode="decimal" placeholder="시간">'+
+          '<select class="cssel" data-act="lr" data-id="'+x.id+'" data-k="form">'+
+            '<option value="">형태</option>'+
+            LEARN_FORMS.map(function(f){ return '<option'+(x.form===f?' selected':'')+'>'+f+'</option>'; }).join("")+
+          '</select>'+
+          '<span class="spacer" style="margin-left:auto"></span>'+
+          '<button class="btn tiny ghost" data-act="lr-del" data-id="'+x.id+'" aria-label="삭제">✕</button>'+
+        '</div>'+
+        '<textarea class="input" data-act="lr" data-id="'+x.id+'" data-k="learned" rows="2" placeholder="배운 점">'+esc(x.learned||"")+'</textarea>'+
+        '<input class="input csfollow" data-act="lr" data-id="'+x.id+'" data-k="apply" value="'+esc(x.apply||"")+'" placeholder="우리 반에 어떻게 적용할지">'+
+        '</div>';
+    });
+  }
+  h += '<datalist id="learnKinds">'+LEARN_KINDS.map(function(k){ return '<option value="'+k+'">'; }).join("")+'</datalist>';
+  h += '</div></section>';
   return h;
 }
 
@@ -2104,6 +2374,19 @@ function studentCard(s){
   return h;
 }
 
+/* 상단 칩에 잠깐 알림 */
+function alertChip(msg){
+  var el = $("#saveChip");
+  if (!el) return;
+  var prev = el.textContent, prevState = el.dataset.state;
+  el.dataset.state = "";
+  el.textContent = msg;
+  el.title = msg;
+  setTimeout(function(){
+    if (el.textContent === msg){ el.dataset.state = prevState || ""; el.title = ""; setChip(); }
+  }, 4000);
+}
+
 /* 클립보드 복사 — 보안 제한이 있는 곳에서도 되도록 두 가지를 씁니다 */
 function copyText(text, btn, restore){
   function done(ok){
@@ -2312,6 +2595,7 @@ var EXPORTS = [
   {k:"lesson",  t:"수업기록",            d:"날짜·교시별 교과와 학습내용. 진도 확인이나 장학 자료로 그대로 쓰실 수 있습니다", period:true},
   {k:"eval",    t:"평가계획·평가기록",   d:"평가계획 전체와, 평가별 학생 성취도·점수·관찰내용", period:false},
   {k:"task",    t:"업무·예산",           d:"업무 목록과 마감일, 사업별 배정·집행·잔액, 집행 내역 전체", period:false},
+  {k:"learn",   t:"배움기록",            d:"연수·강의·독서 기록과 연도별 이수시간 합계. 대외활동 정리에 그대로 씁니다", period:false},
   {k:"ref",     t:"명렬·시간표·자리배치", d:"학급 기본 정보 한 장", period:false}
 ];
 function acadYear(){ var d = new Date(); return d.getMonth()+1 >= 3 ? d.getFullYear() : d.getFullYear()-1; }
@@ -2407,6 +2691,9 @@ function viewSet(){
     '<li><b>평가</b> — 평가계획을 먼저 적어 두고, 평가를 골라 학생별로 성취도(매우잘함~노력요함)나 단원평가 점수를 넣습니다. 관찰내용은 학기말 평어 재료가 됩니다.</li>'+
     '<li><b>업무·예산</b> — 마감이 일주일 안인 업무가 맨 위에 뜹니다. 사업별 배정액과 집행 내역을 넣으면 잔액이 자동으로 계산됩니다. '+
     '구글 드라이브 「공문함」 폴더에 공문 사진을 넣어 두면 AI가 읽어 업무를 자동으로 등록합니다.</li>'+
+    '<li><b>캘린더</b> — 내 일정과 학급 행사, 업무 마감일이 한 달 격자에 함께 보입니다. '+
+    '구글 캘린더를 불러와 겹쳐 보거나, 적어 둔 일정을 구글 캘린더로 보낼 수 있습니다.</li>'+
+    '<li><b>배움기록</b> — 들은 연수·강의를 남기면 한 해 이수시간이 자동으로 모입니다. 「적용 계획」까지 적어 두면 수업 연구 자료가 됩니다.</li>'+
     '<li><b>출결</b> — 월별 표에서 칸을 눌러 빠르게 고치고, 오른쪽 끝에서 학생별 누계를 봅니다. 출석·지각·결석·조퇴·결과·체험 여섯 가지로, 대쉬보드와 같은 시트를 씁니다.</li>'+
     '<li><b>학생 기록</b> — 학생 하나를 고르면 출결·평가·누가기록·상담이 한 화면에 모입니다. '+
     '시트에 AI 키를 넣어 두셨으면 쌓인 기록만 근거로 <b>평어 초안</b>도 뽑아 드립니다. 초안은 저장되지 않으니 고쳐서 쓰세요.</li>'+
@@ -2483,6 +2770,66 @@ document.addEventListener("click", function(e){
     if (gone && S.selPlan === gone.name) S.selPlan = S.plans.length ? S.plans[0].name : "";
     if (gone) delete S.scores[gone.name];
     markDirty("plans", "scores"); render(); return;
+  }
+  if (a === "cal-prev"){ S.calMonth = shiftMonth(S.calMonth,-1); render(); return; }
+  if (a === "cal-next"){ S.calMonth = shiftMonth(S.calMonth,1); render(); return; }
+  if (a === "cal-now"){ S.calMonth = ymOf(todayISO()); render(); return; }
+  if (a === "ev-add"){
+    S.events.push({id:uid(), date:S.calMonth+"-"+pad(1), end:"", time:"", title:"", kind:"", place:"", memo:"", cal:""});
+    markDirty("events"); render();
+    var et = $$('[data-act="ev"][data-k="title"]');
+    if (et.length) et[et.length-1].focus();
+    return;
+  }
+  if (a === "ev-del"){
+    S.events = S.events.filter(function(e){ return e.id !== el.dataset.id; });
+    markDirty("events"); render(); return;
+  }
+  if (a === "gcal-pull"){
+    if (S.mode !== "sheet"){ alertChip("구글 캘린더는 시트에 연결되어 있어야 불러올 수 있습니다."); return; }
+    S.gcalBusy = true; render();
+    var n2 = daysInMonth(S.calMonth);
+    api.call({action:"calpull", from:S.calMonth+"-01", to:S.calMonth+"-"+pad(n2)})
+      .then(function(j){
+        S.gcalBusy = false;
+        S.gcal[S.calMonth] = j.events || [];
+        S.gcalName = j.calendar || "";
+        render();
+      })
+      .catch(function(err){
+        S.gcalBusy = false; render();
+        alertChip("구글 캘린더를 불러오지 못했습니다. " + apiMessage(err));
+      });
+    return;
+  }
+  if (a === "gcal-push"){
+    if (S.mode !== "sheet"){ alertChip("구글 캘린더는 시트에 연결되어 있어야 보낼 수 있습니다."); return; }
+    var items = S.events.filter(function(e){ return ymOf(e.date) === S.calMonth && String(e.title||"").trim(); })
+      .map(function(e){ return {date:e.date, end:e.end, time:e.time, title:e.title, place:e.place, memo:e.memo}; });
+    if (!items.length) return;
+    S.gcalBusy = true; render();
+    api.call({action:"calpush", items:items})
+      .then(function(j){
+        S.gcalBusy = false; render();
+        alertChip((j.made||[]).length + "건을 「" + (j.calendar||"구글 캘린더") + "」에 만들었습니다.");
+      })
+      .catch(function(err){
+        S.gcalBusy = false; render();
+        alertChip("보내지 못했습니다. " + apiMessage(err));
+      });
+    return;
+  }
+  if (a === "lr-add"){
+    S.learn.push({id:uid(), date:todayISO(), kind:"직무연수", title:"", host:"", hours:"", form:"", learned:"", apply:"", proof:""});
+    S.learnYear = todayISO().slice(0,4);
+    markDirty("learn"); render();
+    var lt = $$('[data-act="lr"][data-k="title"]');
+    if (lt.length) lt[lt.length-1].focus();
+    return;
+  }
+  if (a === "lr-del"){
+    S.learn = S.learn.filter(function(x){ return x.id !== el.dataset.id; });
+    markDirty("learn"); render(); return;
   }
   if (a === "task-add"){
     S.tasks.push({id:uid(), reg:todayISO(), kind:"", name:"", owner:"", due:"", status:"대기", budget:"", docno:"", link:"", memo:""});
@@ -2794,8 +3141,18 @@ document.addEventListener("input", function(e){
     if (cc){ cc[el.dataset.k] = el.value; markDirty("counsel"); }
     return;
   }
-  if (a === "tt"){ S.tt.grid[+el.dataset.d][+el.dataset.p] = el.value; markDirty("tt"); return; }
   if (a === "ev"){
+    var ee = S.events.filter(function(x){ return x.id === el.dataset.id; })[0];
+    if (ee){ ee[el.dataset.k] = el.value; markDirty("events"); }
+    return;
+  }
+  if (a === "lr"){
+    var ll = S.learn.filter(function(x){ return x.id === el.dataset.id; })[0];
+    if (ll){ ll[el.dataset.k] = el.value; markDirty("learn"); }
+    return;
+  }
+  if (a === "tt"){ S.tt.grid[+el.dataset.d][+el.dataset.p] = el.value; markDirty("tt"); return; }
+  if (a === "wk-ev"){
     day(el.dataset.d).event = el.value;
     markDirty("journal"); return;
   }
@@ -2892,6 +3249,12 @@ document.addEventListener("change", function(e){
   if (el.id === "expMonth"){ if (el.value) S.expMonth = el.value; return; }
   if (el.id === "evalPick"){ S.selPlan = el.value; render(); return; }
   if (el.id === "cardMode"){ S.cardMode = el.value; return; }
+  if (el.id === "learnYear"){ S.learnYear = el.value; render(); return; }
+  if (a === "lr" && el.dataset.k === "form"){
+    var lf = S.learn.filter(function(x){ return x.id === el.dataset.id; })[0];
+    if (lf){ lf.form = el.value; markDirty("learn"); }
+    return;
+  }
   if (a === "att-rkind"){
     var ar = (S.att[S.date]||{})[el.dataset.sid];
     if (ar){ ar.rk = el.value; markDirty("att"); }
@@ -3106,6 +3469,30 @@ function buildTaskCSV(){
     .forEach(function(x){ rows.push([x.date||"", x.budget||"", x.item||"", won(x.amount), x.proof||"", x.note||""]); });
   return toCSV(rows);
 }
+function buildLearnCSV(){
+  var rows = [[classTag()+" 배움기록", "기준일 "+todayISO()], [],
+    ["날짜","구분","제목","주최","이수시간","형태","배운 점","적용 계획","증빙"]];
+  S.learn.slice().sort(function(a,b){ return String(a.date).localeCompare(String(b.date)); })
+    .forEach(function(x){
+      rows.push([x.date||"", x.kind||"", x.title, x.host||"", x.hours||"", x.form||"",
+                 x.learned||"", x.apply||"", x.proof||""]);
+    });
+  /* 연도별 합계 */
+  var byYear = {};
+  S.learn.forEach(function(x){
+    if (!isDate(x.date)) return;
+    var y = x.date.slice(0,4);
+    var v = parseFloat(String(x.hours).replace(/[^0-9.]/g,""));
+    if (!byYear[y]) byYear[y] = {n:0, h:0};
+    byYear[y].n++; if (!isNaN(v)) byYear[y].h += v;
+  });
+  var ys = Object.keys(byYear).sort();
+  if (ys.length){
+    rows.push([]); rows.push(["연도별 합계"]); rows.push(["연도","건수","이수시간"]);
+    ys.forEach(function(y){ rows.push([y, byYear[y].n, Math.round(byYear[y].h*10)/10]); });
+  }
+  return toCSV(rows);
+}
 function buildRefCSV(){
   var c = S.cls;
   var rows = [[classTag()+" 학급 기본 정보", "기준일 "+todayISO()], [],
@@ -3149,6 +3536,7 @@ function runExport(kind, btn){
     : kind==="lesson" ? buildLessonCSV(months)
     : kind==="eval" ? buildEvalCSV()
     : kind==="task" ? buildTaskCSV()
+    : kind==="learn" ? buildLearnCSV()
     : buildRefCSV();
   try{
     var blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8"});
