@@ -115,8 +115,8 @@ button,input,textarea,select{font:inherit; color:inherit}
 /* ---------- primitives ---------- */
 .panel{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow)}
 .panel > header{display:flex; align-items:center; gap:10px; padding:13px 16px; border-bottom:1px solid var(--line)}
-.panel > header h2{margin:0; font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2)}
-.panel > header .sub{font-size:12px; color:var(--ink-3); font-weight:400; letter-spacing:0; text-transform:none}
+.panel > header h2{margin:0; font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2); white-space:nowrap}
+.panel > header .sub{font-size:12px; color:var(--ink-3); font-weight:400; letter-spacing:0; text-transform:none; min-width:0}
 .panel > header .spacer{margin-left:auto}
 .pbody{padding:16px}
 .stack{display:flex; flex-direction:column; gap:16px}
@@ -210,7 +210,7 @@ textarea.input{resize:vertical; line-height:1.75}
 .carry .cd{font-family:var(--mono); font-size:11.5px; color:var(--ink-3); flex:0 0 auto}
 
 /* ---------- attendance ---------- */
-.attgrid{display:grid; grid-template-columns:repeat(auto-fill, minmax(96px,1fr)); gap:6px}
+.attgrid{display:grid; grid-template-columns:repeat(auto-fill, minmax(114px,1fr)); gap:6px}
 .stu{display:flex; align-items:center; gap:7px; border:1px solid var(--line); background:var(--surface-2); border-radius:7px; padding:6px 8px; cursor:pointer; text-align:left; min-width:0}
 .stu:hover{border-color:var(--line-strong)}
 .stu .no{font-family:var(--mono); font-size:11px; color:var(--ink-3); flex:0 0 auto; font-variant-numeric:tabular-nums}
@@ -224,6 +224,12 @@ textarea.input{resize:vertical; line-height:1.75}
 .stu[data-t="E"] .mk{color:var(--info)}
 .stu[data-t="R"]{background:var(--warn-soft); border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
 .stu[data-t="R"] .mk{color:var(--warn)}
+.stu[data-t="P"]{background:var(--accent-soft); border-color:color-mix(in srgb,var(--accent) 35%,transparent)}
+.stu[data-t="P"] .mk{color:var(--accent)}
+.stu[data-t="X"]{background:var(--info-soft); border-color:color-mix(in srgb,var(--info) 30%,transparent)}
+.stu[data-t="X"] .mk{color:var(--info)}
+table.month td.cell[data-t="P"]{background:var(--accent-soft); color:var(--accent)}
+table.month td.cell[data-t="X"]{background:var(--info-soft); color:var(--info)}
 
 .reasons{display:flex; flex-direction:column; gap:7px; margin-top:14px; padding-top:13px; border-top:1px solid var(--line)}
 .reasonrow{display:flex; align-items:center; gap:9px; flex-wrap:wrap}
@@ -405,14 +411,19 @@ var DOW = ["일","월","화","수","목","금","토"];
 var WX = ["맑음","구름","흐림","비","눈","바람"];
 var CATS = ["학습","생활","태도","관계","건강","기타"];
 var ATT = {
-  "":  {mk:"",   name:"출석"},
-  "A": {mk:"결", name:"결석"},
+  "":  {mk:"",   name:""},
+  "P": {mk:"○", name:"출석"},
   "L": {mk:"지", name:"지각"},
+  "A": {mk:"결", name:"결석"},
   "E": {mk:"조", name:"조퇴"},
-  "R": {mk:"과", name:"결과"}
+  "R": {mk:"과", name:"결과"},
+  "X": {mk:"체", name:"체험"}
 };
-var CYCLE = ["", "A", "L", "E", "R"];
-var NAME2T = {"결석":"A","지각":"L","조퇴":"E","결과":"R","결":"A","지":"L","조":"E","과":"R"};
+var CYCLE = ["", "P", "L", "A", "E", "R", "X"];
+var NAME2T = {"출석":"P","지각":"L","결석":"A","조퇴":"E","결과":"R","체험":"X",
+              "○":"P","지":"L","결":"A","조":"E","과":"R","체":"X"};
+/* 등교하지 않은 것으로 세는 상태 */
+var ABSENTISH = {"A":1, "X":1};
 
 function pad(n){ return (n<10?"0":"")+n; }
 function iso(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
@@ -445,7 +456,7 @@ var api = {
   call: function(body){
     var self = this;
     if (!self.url) return Promise.reject({code:"no_url", message:"시트 주소가 설정되지 않았습니다"});
-    var payload = JSON.stringify(Object.assign({token:self.token}, body));
+    var payload = JSON.stringify(Object.assign({app:"classlog", token:self.token}, body));
     return fetch(self.url, {
       method: "POST",
       /* text/plain 이어야 브라우저가 사전 요청(preflight)을 보내지 않아 Apps Script와 통신됩니다 */
@@ -490,8 +501,10 @@ var S = {
   roster: [],
   demo: false,
   days: {},               /* "YYYY-MM-DD" -> {w, notices:[{id,t}], todos:[{id,t,done}], diary:""} */
-  att: {},                /* "YYYY-MM-DD" -> { sid: {t, r} }  — 출석은 저장하지 않습니다 */
+  att: {},                /* "YYYY-MM-DD" -> { sid: {t, r} } */
   obs: {},                /* sid -> [ {id, date, cat, text} ] */
+  baseAtt: [],            /* 마지막으로 시트에서 읽어온 출결 키 — 대쉬보드 기록을 지우지 않기 위해 씁니다 */
+  baseObs: [],
   tt: {periods:7, grid:[[],[],[],[],[]]},
   seat: {rows:5, cols:6, cells:[]},
   sel: null,
@@ -545,7 +558,10 @@ function pushSave(){
   keys.forEach(function(k){ tabs[TABS[k]] = buildTab(k); });
   dirty = {};
   setChip("saving");
-  return api.call({action:"save", tabs:tabs}).then(function(){
+  return api.call({action:"save", tabs:tabs, base:{att:S.baseAtt, obs:S.baseObs}}).then(function(){
+    /* 저장한 내용이 새 기준이 됩니다 */
+    if (tabs[TABS.att]) S.baseAtt = attKeys();
+    if (tabs[TABS.obs]) S.baseObs = obsKeys();
     saving = false; saveFailed = false; savedAt = new Date(); setChip();
   }).catch(function(err){
     saving = false; saveFailed = true;
@@ -593,17 +609,17 @@ document.addEventListener("visibilitychange", function(){ if (document.hidden &&
 /* ===================== 메모리 → 시트 ===================== */
 function buildTab(key){
   if (key === "students"){
-    var r = [["번호","이름","비고"]];
-    S.roster.slice().sort(byNo).forEach(function(s){ r.push([s.no, s.name, s.note||""]); });
+    var r = [["번호","이름","성별","비고"]];
+    S.roster.slice().sort(byNo).forEach(function(s){ r.push([s.no, s.name, s.sex||"", s.note||""]); });
     return r;
   }
   if (key === "att"){
-    var r2 = [["날짜","번호","이름","구분","사유"]];
+    var r2 = [["날짜","요일","번호","이름","구분","사유"]];
     Object.keys(S.att).sort().forEach(function(dt){
       S.roster.slice().sort(byNo).forEach(function(s){
         var rec = S.att[dt][s.id];
         if (!rec || !rec.t) return;
-        r2.push([dt, s.no, s.name, ATT[rec.t].name, rec.r||""]);
+        r2.push([dt, DOW[dowOf(dt)], s.no, s.name, ATT[rec.t].name, rec.r||""]);
       });
     });
     return r2;
@@ -630,7 +646,7 @@ function buildTab(key){
   if (key === "tt"){
     var r5 = [["교시","월","화","수","목","금"]];
     for (var p=0;p<(S.tt.periods||7);p++){
-      var row = [p+1];
+      var row = [(p+1)+"교시"];
       for (var d2=0; d2<5; d2++) row.push((S.tt.grid[d2] && S.tt.grid[d2][p]) || "");
       r5.push(row);
     }
@@ -654,6 +670,23 @@ function buildTab(key){
 }
 function nonEmpty(x){ return x && x.t && String(x.t).trim(); }
 function byNo(a,b){ return (+a.no||0)-(+b.no||0); }
+function attKeys(){
+  var out = [];
+  Object.keys(S.att).forEach(function(dt){
+    S.roster.forEach(function(s){
+      var rec = S.att[dt][s.id];
+      if (rec && rec.t) out.push(dt+"|"+s.no);
+    });
+  });
+  return out;
+}
+function obsKeys(){
+  var out = [];
+  S.roster.forEach(function(s){
+    (S.obs[s.id]||[]).forEach(function(e){ out.push(s.no+"|"+e.date+"|"+e.text); });
+  });
+  return out;
+}
 
 /* ===================== 시트 → 메모리 ===================== */
 function hydrate(data){
@@ -670,12 +703,13 @@ function hydrate(data){
   });
 
   var st = (t[TABS.students] || []).slice(1)
-    .map(function(r){ return {no: String(r[0]||"").trim(), name: String(r[1]||"").trim(), note: String(r[2]||"").trim()}; })
+    .map(function(r){ return {no: String(r[0]||"").trim(), name: String(r[1]||"").trim(),
+                              sex: String(r[2]||"").trim(), note: String(r[3]||"").trim()}; })
     .filter(function(s){ return s.name; });
   if (st.length){
     S.roster = st.map(function(s,i){
       var no = parseInt(s.no,10); if (isNaN(no)) no = i+1;
-      return {id:"n"+no, no:no, name:s.name, note:s.note};
+      return {id:"n"+no, no:no, name:s.name, sex:s.sex, note:s.note};
     });
     S.demo = false;
   } else {
@@ -684,16 +718,18 @@ function hydrate(data){
   var byNoMap = {};
   S.roster.forEach(function(s){ byNoMap[s.no] = s.id; });
 
-  S.att = {};
+  S.att = {}; S.baseAtt = [];
   (t[TABS.att] || []).slice(1).forEach(function(r){
     var dt = String(r[0]||"").trim();
     if (!isDate(dt)) return;
-    var sid = byNoMap[parseInt(r[1],10)];
+    var no = parseInt(r[2],10);
+    var sid = byNoMap[no];
     if (!sid) return;
-    var code = NAME2T[String(r[3]||"").trim()];
+    var code = NAME2T[String(r[4]||"").trim()];
     if (!code) return;
     if (!S.att[dt]) S.att[dt] = {};
-    S.att[dt][sid] = {t:code, r:String(r[4]==null?"":r[4]).trim()};
+    S.att[dt][sid] = {t:code, r:String(r[5]==null?"":r[5]).trim()};
+    S.baseAtt.push(dt+"|"+no);
   });
 
   S.days = {};
@@ -711,14 +747,16 @@ function hydrate(data){
     };
   });
 
-  S.obs = {};
+  S.obs = {}; S.baseObs = [];
   (t[TABS.obs] || []).slice(1).forEach(function(r){
-    var sid = byNoMap[parseInt(r[0],10)];
+    var no = parseInt(r[0],10);
+    var sid = byNoMap[no];
     var dt = String(r[2]||"").trim();
     var txt = String(r[4]==null?"":r[4]).trim();
     if (!sid || !txt) return;
     if (!S.obs[sid]) S.obs[sid] = [];
     S.obs[sid].push({id:uid(), date: isDate(dt)?dt:todayISO(), cat:String(r[3]||"기타").trim()||"기타", text:txt});
+    S.baseObs.push(no+"|"+dt+"|"+txt);
   });
 
   var ttRows = (t[TABS.tt] || []).slice(1).filter(function(r){ return String(r[0]||"").trim() !== ""; });
@@ -904,10 +942,11 @@ function demoBanner(){
 
 /* ===================== view: today ===================== */
 function attCounts(dt){
-  var c = {A:0,L:0,E:0,R:0};
+  var c = {P:0,L:0,A:0,E:0,R:0,X:0};
   S.roster.forEach(function(s){ var t = attOf(dt, s.id); if (t && c[t]!==undefined) c[t]++; });
   c.total = S.roster.length;
-  c.present = c.total - c.A;
+  c.present = c.total - c.A - c.X;   /* 등교한 인원 */
+  c.marked = c.P + c.L + c.A + c.E + c.R + c.X;
   return c;
 }
 function carryTodos(){
@@ -936,10 +975,10 @@ function viewToday(){
   WX.forEach(function(w){ h += '<button class="wx-b" data-act="wx" data-w="'+w+'" aria-pressed="'+(d.w===w)+'">'+w+'</button>'; });
   h += '</span></div>';
   h += '<div class="lcell num"><span class="lk">재적</span><span class="lv">'+c.total+'</span></div>';
-  h += '<div class="lcell num"><span class="lk">출석</span><span class="lv">'+c.present+'</span></div>';
+  h += '<div class="lcell num"><span class="lk">등교</span><span class="lv">'+c.present+'</span></div>';
   h += '<div class="lcell num"><span class="lk">결석</span><span class="lv" style="color:'+(c.A?'var(--danger)':'inherit')+'">'+c.A+'</span></div>';
   h += '<div class="lcell num"><span class="lk">지각</span><span class="lv" style="color:'+(c.L?'var(--late)':'inherit')+'">'+c.L+'</span></div>';
-  h += '<div class="lcell num"><span class="lk">조퇴·결과</span><span class="lv">'+(c.E+c.R)+'</span></div>';
+  h += '<div class="lcell num"><span class="lk">조퇴·결과·체험</span><span class="lv">'+(c.E+c.R+c.X)+'</span></div>';
   h += '</div>';
 
   h += '<div class="today"><div class="stack">';
@@ -947,7 +986,10 @@ function viewToday(){
        '<span class="spacer"></span><span class="sub" id="diaryCount">'+(d.diary||"").length+'자</span></header>'+
        '<div class="pbody"><textarea class="input" id="diary" rows="12" placeholder="오늘 수업, 학생들 모습, 전달 사항, 기억해 둘 일…">'+esc(d.diary||"")+'</textarea></div></section>';
 
-  h += '<section class="panel"><header><h2>오늘 출결</h2><span class="sub">이름을 누르면 출석 → 결석 → 지각 → 조퇴 → 결과 순으로 바뀝니다</span></header><div class="pbody">';
+  h += '<section class="panel"><header><h2>오늘 출결</h2>'+
+       '<span class="spacer"></span><button class="btn tiny" data-act="att-all">모두 출석</button>'+
+       '<button class="btn tiny ghost" data-act="att-none">모두 지우기</button></header><div class="pbody">'+
+       '<p style="margin:0 0 10px; font-size:12.5px; color:var(--ink-3)">이름을 누르면 출석 → 지각 → 결석 → 조퇴 → 결과 → 체험 순으로 바뀝니다.</p>';
   if (!S.roster.length) h += '<p class="empty">학생 탭에서 명렬을 먼저 입력해 주세요.</p>';
   else {
     h += '<div class="attgrid">';
@@ -958,7 +1000,7 @@ function viewToday(){
            '<span class="mk">'+ATT[t].mk+'</span></button>';
     });
     h += '</div>';
-    var flagged = S.roster.filter(function(s){ return attOf(S.date, s.id); });
+    var flagged = S.roster.filter(function(s){ var t = attOf(S.date, s.id); return t && t !== "P"; });
     if (flagged.length){
       h += '<div class="reasons">';
       flagged.forEach(function(s){
@@ -1032,7 +1074,7 @@ function viewAtt(){
     '<button class="iconbtn" data-act="mon-prev" aria-label="이전 달">‹</button>'+
     '<b style="font-family:var(--serif); font-size:19px">'+p[0]+'년 '+(+p[1])+'월</b>'+
     '<button class="iconbtn" data-act="mon-next" aria-label="다음 달">›</button>'+
-    '<span style="margin-left:auto; font-size:12.5px; color:var(--ink-3)">칸을 누르면 출석 → 결석 → 지각 → 조퇴 → 결과 순으로 바뀝니다</span></div>';
+    '<span style="margin-left:auto; font-size:12.5px; color:var(--ink-3)">칸을 누르면 출석 → 지각 → 결석 → 조퇴 → 결과 → 체험 순으로 바뀝니다</span></div>';
   if (!S.roster.length) return h + '<div class="panel"><p class="empty">학생 탭에서 명렬을 먼저 입력해 주세요.</p></div>';
 
   h += '<div class="tablewrap"><table class="month"><thead><tr><th class="nmcol">학생</th>';
@@ -1040,9 +1082,10 @@ function viewAtt(){
     var w = dowOf(ym+"-"+pad(i));
     h += '<th class="'+((w===0||w===6)?"wk":"")+'">'+i+'</th>';
   }
-  h += '<th style="min-width:34px">결</th><th style="min-width:34px">지</th><th style="min-width:34px">조</th><th style="min-width:34px">과</th></tr></thead><tbody>';
+  h += '<th style="min-width:34px">결</th><th style="min-width:34px">지</th><th style="min-width:34px">조</th>'+
+       '<th style="min-width:34px">과</th><th style="min-width:34px">체</th></tr></thead><tbody>';
   S.roster.forEach(function(s){
-    var sum = {A:0,L:0,E:0,R:0}, row = "";
+    var sum = {P:0,A:0,L:0,E:0,R:0,X:0}, row = "";
     for (var i2=1;i2<=n;i2++){
       var ds = ym+"-"+pad(i2), w2 = dowOf(ds), t = attOf(ds, s.id);
       if (t && sum[t]!==undefined) sum[t]++;
@@ -1050,14 +1093,16 @@ function viewAtt(){
     }
     h += '<tr><td class="nmcol"><span class="no">'+s.no+'</span>'+esc(s.name)+'</td>'+row+
       '<td class="sum">'+(sum.A||"")+'</td><td class="sum">'+(sum.L||"")+'</td>'+
-      '<td class="sum">'+(sum.E||"")+'</td><td class="sum">'+(sum.R||"")+'</td></tr>';
+      '<td class="sum">'+(sum.E||"")+'</td><td class="sum">'+(sum.R||"")+'</td>'+
+      '<td class="sum">'+(sum.X||"")+'</td></tr>';
   });
   h += '</tbody></table></div>';
   h += '<div class="legend">'+
-    '<span><i style="background:var(--danger-soft); border:1px solid var(--danger)"></i>결석</span>'+
-    '<span><i style="background:var(--late-soft); border:1px solid var(--late)"></i>지각</span>'+
-    '<span><i style="background:var(--info-soft); border:1px solid var(--info)"></i>조퇴</span>'+
-    '<span><i style="background:var(--warn-soft); border:1px solid var(--warn)"></i>결과</span>'+
+    '<span><i style="background:var(--accent-soft); border:1px solid var(--accent)"></i>○ 출석</span>'+
+    '<span><i style="background:var(--danger-soft); border:1px solid var(--danger)"></i>결 결석</span>'+
+    '<span><i style="background:var(--late-soft); border:1px solid var(--late)"></i>지 지각</span>'+
+    '<span><i style="background:var(--info-soft); border:1px solid var(--info)"></i>조 조퇴 · 체 체험</span>'+
+    '<span><i style="background:var(--warn-soft); border:1px solid var(--warn)"></i>과 결과</span>'+
     '<span style="margin-left:auto">사유는 오늘 탭의 출결 칸에서 적을 수 있습니다</span></div>';
   return h;
 }
@@ -1175,10 +1220,13 @@ function viewStu(){
     '<button class="btn tiny primary" data-act="stu-add">＋ 학생</button></header><div class="pbody">';
   if (!S.roster.length) h += '<p class="empty">오른쪽에서 명렬을 붙여넣거나 학생을 한 명씩 추가해 주세요.</p>';
   else {
-    h += '<table class="roster"><thead><tr><th style="width:58px">번호</th><th>이름</th><th>비고</th><th></th></tr></thead><tbody>';
+    h += '<table class="roster"><thead><tr><th style="width:58px">번호</th><th>이름</th><th style="width:64px">성별</th><th>비고</th><th></th></tr></thead><tbody>';
     S.roster.forEach(function(s){
       h += '<tr><td class="nocol"><input data-act="stu-no" data-sid="'+s.id+'" value="'+s.no+'" inputmode="numeric"></td>'+
         '<td><input data-act="stu-name" data-sid="'+s.id+'" value="'+esc(s.name)+'"></td>'+
+        '<td><select class="input" data-act="stu-sex" data-sid="'+s.id+'" style="padding:5px 6px; font-size:13px; background:transparent; border:0">'+
+          ['','남','여'].map(function(g){ return '<option value="'+g+'"'+((s.sex||"")===g?" selected":"")+'>'+(g||"—")+'</option>'; }).join("")+
+        '</select></td>'+
         '<td><input data-act="stu-note" data-sid="'+s.id+'" value="'+esc(s.note||"")+'" placeholder="—"></td>'+
         '<td class="actcol"><button class="btn tiny ghost" data-act="stu-del" data-sid="'+s.id+'" aria-label="삭제">✕</button></td></tr>';
     });
@@ -1290,10 +1338,12 @@ function viewSet(){
   h += '<section class="panel" style="margin-top:16px"><header><h2>쓰는 법</h2></header><div class="pbody">'+
     '<ul style="margin:0; padding-left:18px; font-size:13.5px; color:var(--ink-2); line-height:1.85">'+
     '<li><b>오늘</b> — 날짜를 옮겨 가며 그날의 일지·알림장·할 일·출결을 한 화면에서 적습니다. 알림장은 칠판 모드로 크게 띄울 수 있습니다.</li>'+
-    '<li><b>출결</b> — 월별 표에서 칸을 눌러 빠르게 고치고, 오른쪽 끝에서 학생별 누계를 봅니다. 출석은 따로 저장하지 않고, 결석·지각·조퇴·결과만 기록에 남습니다.</li>'+
+    '<li><b>출결</b> — 월별 표에서 칸을 눌러 빠르게 고치고, 오른쪽 끝에서 학생별 누계를 봅니다. 출석·지각·결석·조퇴·결과·체험 여섯 가지로, 대쉬보드와 같은 시트를 씁니다.</li>'+
     '<li><b>누가기록</b> — 학생별로 쌓아 둔 관찰 기록은 학기 말 평어와 상담 자료로 그대로 씁니다.</li>'+
     '<li><b>자리배치</b> — 학생을 누르고 자리를 누르면 이동, 자리끼리 누르면 맞바꿈입니다.</li>'+
     '<li><b>시트에서 직접 고치기</b> — 구글 시트의 각 탭을 손으로 고쳐도 됩니다. 학생은 <b>번호</b>로 이어지니 번호만 맞춰 주세요.</li>'+
+    '<li><b>대쉬보드와 함께 쓰기</b> — 같은 시트를 쓰는 킹수학 대쉬보드와 <b>학생·시간표·출결·누가기록</b>을 나눠 씁니다. '+
+    '대쉬보드의 상담일지는 누가기록에 영역 「상담」으로 들어옵니다. 두 화면을 동시에 열어 같은 날짜를 고치면 나중에 저장한 쪽이 남습니다.</li>'+
     '</ul></div></section>';
   return h;
 }
@@ -1382,6 +1432,15 @@ document.addEventListener("click", function(e){
   }
 
   if (a === "att-cycle"){ cycleAtt(S.date, el.dataset.sid); render(); return; }
+  if (a === "att-all"){
+    var aa = attDay(S.date);
+    S.roster.forEach(function(s){ if (!aa[s.id] || !aa[s.id].t) aa[s.id] = {t:"P", r:""}; });
+    markDirty("att"); render(); return;
+  }
+  if (a === "att-none"){
+    delete S.att[S.date];
+    markDirty("att"); render(); return;
+  }
   if (a === "att-cell"){
     var t2 = cycleAtt(el.dataset.d, el.dataset.sid);
     el.dataset.t = t2; el.textContent = ATT[t2].mk;
@@ -1579,6 +1638,11 @@ document.addEventListener("change", function(e){
   if (el.id === "dateInput"){ if (el.value) { S.date = el.value; render(); } return; }
   if (el.id === "expPreset"){ S.expPreset = el.value; render(); return; }
   if (el.id === "expMonth"){ if (el.value) S.expMonth = el.value; return; }
+  if (a === "stu-sex"){
+    var sx = byId(el.dataset.sid);
+    if (sx){ sx.sex = el.value; S.demo = false; markDirty("students"); }
+    return;
+  }
 }, false);
 
 function renderObsListOnly(){
@@ -1614,16 +1678,16 @@ function buildAttCSV(months){
     rows.push([]); rows.push([p[0]+"년 "+(+p[1])+"월"]);
     var head = ["번호","이름"];
     for (i=1;i<=n;i++) head.push(String(i));
-    head.push("결석","지각","조퇴","결과");
+    head.push("출석","결석","지각","조퇴","결과","체험");
     rows.push(head);
     S.roster.slice().sort(byNo).forEach(function(st){
-      var r = [st.no, st.name], sum = {A:0,L:0,E:0,R:0};
+      var r = [st.no, st.name], sum = {P:0,A:0,L:0,E:0,R:0,X:0};
       for (i=1;i<=n;i++){
         var t = attOf(ym+"-"+pad(i), st.id);
         if (t && sum[t]!==undefined) sum[t]++;
         r.push(ATT[t] ? ATT[t].mk : "");
       }
-      r.push(sum.A, sum.L, sum.E, sum.R);
+      r.push(sum.P, sum.A, sum.L, sum.E, sum.R, sum.X);
       rows.push(r);
     });
   });
@@ -1632,7 +1696,7 @@ function buildAttCSV(months){
     Object.keys(S.att).filter(function(dt){ return ymOf(dt)===ym; }).sort().forEach(function(dt){
       S.roster.slice().sort(byNo).forEach(function(st){
         var rec = S.att[dt][st.id];
-        if (!rec || !rec.t) return;
+        if (!rec || !rec.t || rec.t === "P") return;
         rows.push([dt, DOW[dowOf(dt)], st.no, st.name, ATT[rec.t].name, rec.r||""]);
       });
     });
@@ -1649,7 +1713,7 @@ function buildObsCSV(){
 }
 function buildJournalCSV(months){
   var rows = [[classTag()+" 학급일지", "기준일 "+todayISO()], [],
-    ["날짜","요일","날씨","재적","출석","결석","지각","조퇴","결과","알림장","할 일","일지 본문"]];
+    ["날짜","요일","날씨","재적","등교","결석","지각","조퇴","결과","체험","알림장","할 일","일지 본문"]];
   var set = {};
   months.forEach(function(m){ set[m] = 1; });
   Object.keys(S.days).sort().forEach(function(dt){
@@ -1658,8 +1722,8 @@ function buildJournalCSV(months){
     var notices = (d.notices||[]).filter(nonEmpty).map(function(x,i){ return (i+1)+". "+x.t; }).join("\n");
     var todos = (d.todos||[]).filter(nonEmpty).map(function(x){ return (x.done?"[완료] ":"[ ] ")+x.t; }).join("\n");
     var body = d.diary || "";
-    if (!notices && !todos && !body.trim() && !c.A && !c.L && !c.E && !c.R && !d.w) return;
-    rows.push([dt, DOW[dowOf(dt)], d.w||"", c.total, c.present, c.A, c.L, c.E, c.R, notices, todos, body]);
+    if (!notices && !todos && !body.trim() && !c.marked && !d.w) return;
+    rows.push([dt, DOW[dowOf(dt)], d.w||"", c.total, c.present, c.A, c.L, c.E, c.R, c.X, notices, todos, body]);
   });
   return toCSV(rows);
 }
@@ -1667,8 +1731,8 @@ function buildRefCSV(){
   var c = S.cls;
   var rows = [[classTag()+" 학급 기본 정보", "기준일 "+todayISO()], [],
     ["학교", c.school||""], ["학년", c.grade||""], ["반", c.klass||""], ["담임", c.teacher||""], [],
-    ["명렬"], ["번호","이름","비고"]];
-  S.roster.slice().sort(byNo).forEach(function(s){ rows.push([s.no, s.name, s.note||""]); });
+    ["명렬"], ["번호","이름","성별","비고"]];
+  S.roster.slice().sort(byNo).forEach(function(s){ rows.push([s.no, s.name, s.sex||"", s.note||""]); });
   rows.push([]); rows.push(["시간표"]); rows.push(["교시","월","화","수","목","금"]);
   for (var p=0;p<(S.tt.periods||7);p++){
     var r = [p+1];
