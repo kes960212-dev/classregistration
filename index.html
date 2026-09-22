@@ -112,6 +112,14 @@ button,input,textarea,select{font:inherit; color:inherit}
 .savechip[data-state="local"]{color:var(--warn); border-color:var(--warn)}
 .savechip[data-state="error"]{color:var(--danger); border-color:var(--danger); cursor:pointer}
 
+.guardbar{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:-6px 0 16px;
+  padding:11px 14px; border-radius:10px; font-size:13px;
+  background:var(--warn-soft); border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);
+}
+.guardbar b{color:var(--warn)}
+.guardbar #guardText{flex:1; min-width:180px; color:var(--ink-2)}
+
 /* ---------- primitives ---------- */
 .panel{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow)}
 .panel > header{display:flex; align-items:center; gap:10px; padding:13px 16px; border-bottom:1px solid var(--line)}
@@ -212,6 +220,8 @@ textarea.input{resize:vertical; line-height:1.75}
 .todo .calbtn{flex:0 0 auto; opacity:.55; padding:3px 7px}
 .todo:hover .calbtn{opacity:.9}
 .todo .calbtn.on{opacity:1; background:var(--accent-soft); border-color:color-mix(in srgb,var(--accent) 35%,transparent)}
+.todo.moved{opacity:.62}
+.movedtag{flex:0 0 auto; align-self:center; font-size:11px; font-weight:700; color:var(--warn); white-space:nowrap}
 
 /* 바로가기 · 메모 */
 .linkwrap{display:flex; flex-direction:column; gap:5px}
@@ -662,6 +672,13 @@ table.roster tr:hover td .btn.ghost{opacity:1}
       <p id="viewSub"></p>
       <span class="savechip" id="saveChip">불러오는 중…</span>
     </div>
+    <div class="guardbar" id="guardBar" hidden>
+      <b>시트의 기존 기록을 지킬게요.</b>
+      <span id="guardText"></span>
+      <button class="btn" data-act="guard-reload">시트에서 다시 불러오기</button>
+      <button class="btn ghost" data-act="guard-force">그래도 비우기</button>
+      <button class="btn ghost" data-act="guard-close">닫기</button>
+    </div>
     <div id="view"></div>
   </main>
 </div>
@@ -889,7 +906,7 @@ function markDirty(){
   clearTimeout(saveTimer);
   saveTimer = setTimeout(pushSave, 2200);
 }
-function pushSave(){
+function pushSave(force){
   clearTimeout(saveTimer);
   var keys = Object.keys(dirty);
   if (!keys.length){ setChip(); return Promise.resolve(); }
@@ -900,13 +917,16 @@ function pushSave(){
   keys.forEach(function(k){ tabs[TABS[k]] = buildTab(k); });
   dirty = {};
   setChip("saving");
-  return api.call({action:"save", tabs:tabs, base:{att:S.baseAtt, obs:S.baseObs}}).then(function(j){
+  return api.call({action:"save", tabs:tabs, base:{att:S.baseAtt, obs:S.baseObs}, force:force}).then(function(j){
     /* 저장한 내용이 새 기준이 됩니다 */
     if (tabs[TABS.att]) S.baseAtt = attKeys();
     if (tabs[TABS.obs]) S.baseObs = obsKeys();
     /* 방금 내가 쓴 내용이므로, 새 표시를 기억해 두면 다음에 열 때 다시 읽지 않습니다 */
     if (j && j.ver) lsSet("classlog:ver", j.ver); else lsDel("classlog:ver");
     saving = false; saveFailed = false; savedAt = new Date(); setChip();
+    /* 서버가 "빈 내용이라 덮어쓰지 않았다"고 알려 준 탭 */
+    if (j && j.skipped && j.skipped.length) showGuard(j.skipped, tabs);
+    else hideGuard();
     if (tabs[TABS.todos]) setTimeout(autoPushTodos, 300);
   }).catch(function(err){
     saving = false; saveFailed = true;
@@ -915,6 +935,38 @@ function pushSave(){
     setChip("error");
   });
 }
+
+/* ---- 안전장치 알림 ----
+   시트에는 자료가 있는데 이 기기에서 빈 내용이 올라가면 서버가 거절합니다.
+   그때 무슨 일이 있었는지 알려 주고, 되돌릴 방법을 먼저 권합니다. */
+var guardPending = null;
+function showGuard(names, tabs){
+  guardPending = {};
+  names.forEach(function(n){ guardPending[n] = tabs[n]; });
+  var bar = $("#guardBar"), txt = $("#guardText");
+  if (!bar) return;
+  if (txt) txt.textContent = "‘" + names.join("’, ‘") + "’ 탭이 이 기기에서는 비어 있어서 시트에 덮어쓰지 않았습니다. "
+    + "시트의 기록은 그대로 있습니다.";
+  bar.hidden = false;
+}
+function hideGuard(){
+  guardPending = null;
+  var bar = $("#guardBar");
+  if (bar) bar.hidden = true;
+}
+function forceGuard(){
+  if (!guardPending) return hideGuard();
+  var tabs = guardPending;
+  hideGuard();
+  saving = true; setChip("saving");
+  api.call({action:"save", tabs:tabs, base:{att:S.baseAtt, obs:S.baseObs}, force:true}).then(function(j){
+    if (j && j.ver) lsSet("classlog:ver", j.ver); else lsDel("classlog:ver");
+    saving = false; savedAt = new Date(); setChip();
+  }).catch(function(err){
+    saving = false; saveFailed = true; S.lastError = apiMessage(err); setChip("error");
+  });
+}
+
 function setChip(state){
   var el = $("#saveChip");
   if (!el) return;
@@ -2928,6 +2980,14 @@ document.addEventListener("click", function(e){
   var a = el.dataset.act;
 
   if (a === "go-stu"){ S.tab = "stu"; render(); return; }
+  if (a === "guard-close"){ hideGuard(); return; }
+  if (a === "guard-force"){ forceGuard(); return; }
+  if (a === "guard-reload"){
+    hideGuard(); setChip("checking");
+    loadFromSheet().then(function(){ render(); setChip(); })
+      .catch(function(err){ S.lastError = apiMessage(err); setChip("error"); });
+    return;
+  }
   if (a === "board-open"){ openBoard(); return; }
   if (a === "board-close"){ closeBoard(); return; }
 
@@ -3459,7 +3519,25 @@ document.addEventListener("change", function(e){
   }
   if (a === "todo-date"){
     var td = S.todos.filter(function(t){ return t.id === el.dataset.id; })[0];
-    if (td && el.value){ td.date = el.value; markDirty("todos", "journal"); render(); }
+    if (!td || !el.value) return;
+    td.date = el.value;
+    markDirty("todos", "journal");
+    /* 화면을 다시 그리면 줄이 사라져 버리니, 자리에 그대로 두고 표시만 바꿉니다 */
+    var row = el.closest(".todo");
+    if (!row) return;
+    var tag = row.querySelector(".movedtag");
+    if (el.value === S.date){
+      row.classList.remove("moved");
+      if (tag) tag.parentNode.removeChild(tag);
+    } else {
+      row.classList.add("moved");
+      if (!tag){
+        tag = document.createElement("span");
+        tag.className = "movedtag";
+        el.parentNode.insertBefore(tag, el.nextSibling);
+      }
+      tag.textContent = fmtShort(el.value) + "로 옮김";
+    }
     return;
   }
   /* 금액 칸은 입력이 끝나면 천 단위로 보기 좋게 바꿔 둡니다 (화면은 다시 그리지 않습니다) */
