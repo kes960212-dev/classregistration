@@ -223,6 +223,16 @@ textarea.input{resize:vertical; line-height:1.75}
 .todo.moved{opacity:.62}
 .movedtag{flex:0 0 auto; align-self:center; font-size:11px; font-weight:700; color:var(--warn); white-space:nowrap}
 
+.tgroup + .tgroup{margin-top:12px; padding-top:9px; border-top:1px dashed var(--line)}
+.tk{
+  display:flex; align-items:center; font-size:11px; letter-spacing:.09em; font-weight:700;
+  color:var(--ink-3); margin-bottom:3px;
+}
+.tk.now{color:var(--accent)}
+.tk.late{color:var(--warn)}
+.tk .btn.tiny{font-size:11px; letter-spacing:0; padding:1px 7px}
+.tgroup .todo.done input[type="text"]{color:var(--ink-3)}
+
 /* 바로가기 · 메모 */
 .linkwrap{display:flex; flex-direction:column; gap:5px}
 .linkrow{display:flex; align-items:center; gap:7px}
@@ -808,8 +818,24 @@ var api = {
     });
   }
 };
+/* 웹앱 주소 다듬기 — 흔한 실수를 조용히 바로잡습니다 */
+function normalizeUrl(raw){
+  var u = String(raw || "").trim();
+  if (!u) return "";
+  u = u.replace(/^[<(\["']+|[>)\]"']+$/g, "");        /* 괄호·따옴표가 딸려온 경우 */
+  u = u.replace(/\s+/g, "");                          /* 줄바꿈·공백 */
+  if (u.indexOf("script.google.com") < 0) return u;   /* 다른 주소면 건드리지 않습니다 */
+  u = u.replace(/[?#].*$/, "");                       /* 뒤에 붙은 물음표 이하 */
+  u = u.replace(/\/+$/, "");                          /* 맨 끝 빗금 */
+  u = u.replace(/\/dev$/, "/exec");                   /* 테스트용 /dev → 실제 /exec */
+  if (!/\/exec$/.test(u) && /\/macros\/s\/[^\/]+$/.test(u)) u += "/exec";
+  return u;
+}
 function apiMessage(err){
   var c = err && err.code;
+  if (c === "http_404") return "이 주소로는 웹 앱을 찾을 수 없습니다(404). "
+    + "Apps Script에서 ‘배포 → 새 배포 → 유형: 웹 앱’으로 배포한 뒤, 그때 나오는 주소(끝이 /exec)를 넣어 주세요.";
+  if (c === "http_403") return "접근이 막혔습니다(403). 배포 설정에서 ‘액세스 권한: 모든 사용자’ 인지 확인해 주세요.";
   if (c === "bad_token") return "암호가 맞지 않습니다.";
   if (c === "no_token_set") return "시트 쪽에 암호가 아직 설정되지 않았습니다. 안내문의 ‘암호 정하기’ 단계를 마쳐 주세요.";
   if (c === "no_url") return "시트 주소가 설정되지 않았습니다. 설정 탭에서 넣어 주세요.";
@@ -868,7 +894,10 @@ var S = {
   expPreset: "month",
   expMonth: ymOf(todayISO()),
   expLog: [],
-  lastError: ""
+  lastError: "",
+  connMsg: "",
+  connBad: false,
+  showDone: false
 };
 
 /* ===================== 예시 데이터 ===================== */
@@ -1492,7 +1521,7 @@ function byId(sid){
 
 /* ===================== boot ===================== */
 function boot(){
-  api.url = lsGet("classlog:url") || CONFIG.API_URL || "";
+  api.url = normalizeUrl(lsGet("classlog:url") || CONFIG.API_URL || "");
   api.token = lsGet("classlog:token") || "";
   var snap = readLocal();
 
@@ -1535,6 +1564,7 @@ function loadFromSheet(){
     hydrate(j.data);
     if (j.data && j.data.ver) lsSet("classlog:ver", j.data.ver);
     mirrorLocal();
+    return j;
   });
 }
 function start(){
@@ -1634,13 +1664,70 @@ function attCounts(dt){
   c.marked = c.P + c.L + c.A + c.E + c.R + c.X;
   return c;
 }
-function carryTodos(){
-  return S.todos.filter(function(t){
-    return isDate(t.date) && t.date < S.date && !t.done && String(t.t||"").trim();
-  }).sort(function(a,b){ return a.date.localeCompare(b.date); })
-    .slice(-8)
-    .map(function(t){ return {date:t.date, id:t.id, text:t.t}; });
+/* ── 할 일 한 칸 ── */
+function todoRow(t, carry){
+  return '<div class="todo'+(t.done?" done":"")+'">'+
+    '<input type="checkbox" data-act="todo-done" data-id="'+t.id+'"'+(t.done?" checked":"")+' aria-label="완료">'+
+    '<input type="text" data-act="todo-edit" data-id="'+t.id+'" value="'+esc(t.t)+'" placeholder="할 일">'+
+    '<input type="date" class="tdate" data-act="todo-date" data-id="'+t.id+'" value="'+esc(isDate(t.date)?t.date:"")+'" title="이 할 일의 날짜">'+
+    (carry ? '<button class="btn tiny ghost" data-act="carry-move" data-id="'+t.id+'" title="오늘로 옮기기">오늘로</button>' : '')+
+    '<button class="btn tiny ghost calbtn'+(t.cal?" on":"")+'" data-act="todo-cal" data-id="'+t.id+'" '+
+      'title="'+(t.cal?"구글 캘린더에 넣었습니다":"구글 캘린더에 넣기")+'">📅</button>'+
+    '<button class="btn tiny ghost" data-act="todo-del" data-id="'+t.id+'" aria-label="삭제">✕</button></div>';
 }
+
+/* ── 할 일 칸 전체 — 오늘 것이 맨 위, 나머지도 모두 보입니다 ── */
+function todoPanel(){
+  var byDate = function(a,b){ return String(a.date).localeCompare(String(b.date)); };
+  var today = [], over = [], soon = [], done = [];
+  S.todos.forEach(function(t){
+    if (t.date === S.date){ today.push(t); return; }
+    if (t.done){ done.push(t); return; }
+    if (isDate(t.date) && t.date < S.date) over.push(t);
+    else soon.push(t);
+  });
+  today.sort(function(a,b){ return (a.done?1:0)-(b.done?1:0); });
+  over.sort(byDate); soon.sort(byDate); done.sort(byDate).reverse();
+
+  var rest = over.length + soon.length;
+  var h = '<section class="panel"><header><h2>할 일</h2>'+
+    '<span class="sub">'+(today.length ? "오늘 "+today.length+"건" : "오늘은 없음")+
+      (rest ? " · 다른 날 "+rest+"건" : "")+'</span><span class="spacer"></span>'+
+    '<button class="btn tiny primary" data-act="todo-add">＋ 할 일</button></header><div class="pbody">';
+
+  /* 오늘 */
+  h += '<div class="tgroup"><div class="tk now">오늘 '+fmtShort(S.date)+'</div>';
+  if (!today.length) h += '<p class="empty" style="padding:6px 0 2px">오늘 처리할 업무를 적어 두세요.</p>';
+  else today.forEach(function(t){ h += todoRow(t); });
+  h += '</div>';
+
+  /* 지난 날 안 끝난 것 */
+  if (over.length){
+    h += '<div class="tgroup"><div class="tk late">지난 날 · 아직 '+over.length+'건'+
+      '<button class="btn tiny ghost" data-act="carry-all" style="margin-left:8px">모두 오늘로</button></div>';
+    over.forEach(function(t){ h += todoRow(t, true); });
+    h += '</div>';
+  }
+
+  /* 앞으로 */
+  if (soon.length){
+    h += '<div class="tgroup"><div class="tk">앞으로 '+soon.length+'건</div>';
+    soon.forEach(function(t){ h += todoRow(t); });
+    h += '</div>';
+  }
+
+  /* 끝낸 것 — 접어 둡니다 */
+  if (done.length){
+    h += '<div class="tgroup"><div class="tk"><button class="btn tiny ghost" data-act="todo-done-toggle">'+
+      (S.showDone ? "▾" : "▸")+' 끝낸 것 '+done.length+'건</button></div>';
+    if (S.showDone) done.forEach(function(t){ h += todoRow(t); });
+    h += '</div>';
+  }
+
+  if (S.autoCal) h += '<p style="margin:10px 0 0; font-size:12px; color:var(--ink-3)">적은 할 일이 잠시 뒤 구글 캘린더에 자동으로 들어갑니다. 📅가 초록으로 바뀌면 들어간 것입니다.</p>';
+  return h + '</div></section>';
+}
+
 function viewToday(){
   var d = day(S.date), c = attCounts(S.date), dw = dowOf(S.date);
   var h = demoBanner();
@@ -1718,31 +1805,7 @@ function viewToday(){
   }
   h += '</div></section>';
 
-  var mine = todosOn(S.date);
-  h += '<section class="panel"><header><h2>할 일</h2>'+
-       '<span class="sub">날짜를 바꾸면 그 날로 옮겨집니다</span><span class="spacer"></span>'+
-       '<button class="btn tiny primary" data-act="todo-add">＋ 할 일</button></header><div class="pbody">';
-  if (!mine.length) h += '<p class="empty">오늘 처리할 업무를 적어 두세요.</p>';
-  else mine.forEach(function(t){
-    h += '<div class="todo'+(t.done?" done":"")+'">'+
-         '<input type="checkbox" data-act="todo-done" data-id="'+t.id+'"'+(t.done?" checked":"")+' aria-label="완료">'+
-         '<input type="text" data-act="todo-edit" data-id="'+t.id+'" value="'+esc(t.t)+'" placeholder="할 일">'+
-         '<input type="date" class="tdate" data-act="todo-date" data-id="'+t.id+'" value="'+esc(isDate(t.date)?t.date:"")+'" title="이 할 일의 날짜">'+
-         '<button class="btn tiny ghost calbtn'+(t.cal?" on":"")+'" data-act="todo-cal" data-id="'+t.id+'" '+
-           'title="'+(t.cal?"구글 캘린더에 넣었습니다":"구글 캘린더에 넣기")+'">'+(t.cal?"📅":"📅")+'</button>'+
-         '<button class="btn tiny ghost" data-act="todo-del" data-id="'+t.id+'" aria-label="삭제">✕</button></div>';
-  });
-  var carry = carryTodos();
-  if (carry.length){
-    h += '<div class="carry"><div class="ck">아직 남은 지난 할 일 '+carry.length+'건</div>';
-    carry.forEach(function(c2){
-      h += '<div class="citem"><span class="cd">'+fmtShort(c2.date)+'</span><span>'+esc(c2.text)+'</span>'+
-           '<button class="btn tiny ghost" data-act="carry-move" data-id="'+c2.id+'" style="margin-left:auto">오늘로</button></div>';
-    });
-    h += '</div>';
-  }
-  if (S.autoCal) h += '<p style="margin:10px 0 0; font-size:12px; color:var(--ink-3)">적은 할 일이 잠시 뒤 구글 캘린더에 자동으로 들어갑니다. 📅가 초록으로 바뀌면 들어간 것입니다.</p>';
-  h += '</div></section>';
+  h += todoPanel();
 
   /* ── 바로가기 · 메모 ── */
   h += '<section class="panel"><header><h2>바로가기 · 메모</h2><span class="spacer"></span>'+
@@ -2914,15 +2977,17 @@ function viewSet(){
       '<input class="input" id="setUrl" value="'+esc(api.url)+'" placeholder="https://script.google.com/macros/s/…/exec"></div>'+
       '<div class="field"><label for="setPw">접속 암호</label>'+
       '<input class="input" type="password" id="setPw" placeholder="시트에 설정한 암호"></div>'+
-      '<div class="row"><button class="btn primary" data-act="connect">연결하고 지금 기록 올리기</button></div>'+
-      '<p style="margin:0; font-size:12.5px; color:var(--ink-3)" id="connMsg"></p>';
+      '<div class="row"><button class="btn primary" data-act="connect">연결하고 지금 기록 올리기</button></div>';
   }
+  h += '<p style="margin:0; font-size:12.5px; line-height:1.7; color:'+
+    (S.connBad ? "var(--danger)" : "var(--ink-3)")+'" id="connMsg">'+esc(S.connMsg||"")+'</p>';
   h += '</div></section></div>';
 
   h += '<section class="panel" style="margin-top:16px"><header><h2>쓰는 법</h2></header><div class="pbody">'+
     '<ul style="margin:0; padding-left:18px; font-size:13.5px; color:var(--ink-2); line-height:1.85">'+
     '<li><b>오늘</b> — 날짜를 옮겨 가며 그날의 일지·알림장·할 일·출결을 한 화면에서 적습니다. 알림장은 칠판 모드로 크게 띄울 수 있습니다.</li>'+
-    '<li><b>할 일</b> — 각 할 일마다 날짜가 있습니다. 날짜를 바꾸면 그 날로 옮겨지고, 지난 날의 안 끝난 할 일은 아래에 따라와 「오늘로」로 당길 수 있습니다. '+
+    '<li><b>할 일</b> — 적어 둔 할 일이 <b>오늘 · 지난 날 · 앞으로 · 끝낸 것</b>으로 나뉘어 한 칸에 모두 보입니다. 오늘 것이 맨 위입니다. '+
+    '지난 날 것은 「오늘로」나 「모두 오늘로」로 당길 수 있고, 날짜 칸을 고치면 그 날로 옮겨집니다. '+
     '위의 자동 넣기를 켜두면 구글 캘린더에도 같이 들어갑니다.</li>'+
     '<li><b>바로가기 · 메모</b> — 자주 여는 사이트와 기억해 둘 내용을 올려 두는 칸입니다. 날짜와 상관없이 늘 같은 자리에 있습니다.</li>'+
     '<li><b>수업</b> — 한 주를 교시 × 요일 격자로 봅니다. 교과는 시간표에서 자동으로 채워지니 학습내용만 적으시면 됩니다. 다음 주에 미리 적으면 계획, 지나고 고치면 기록입니다.</li>'+
@@ -3166,6 +3231,15 @@ document.addEventListener("click", function(e){
     item.date = S.date;
     markDirty("todos", "journal"); render(); return;
   }
+  if (a === "carry-all"){
+    var moved = 0;
+    S.todos.forEach(function(t){
+      if (!t.done && isDate(t.date) && t.date < S.date){ t.date = S.date; moved++; }
+    });
+    if (moved){ markDirty("todos", "journal"); render(); }
+    return;
+  }
+  if (a === "todo-done-toggle"){ S.showDone = !S.showDone; render(); return; }
   if (a === "todo-cal"){
     var tc = S.todos.filter(function(t){ return t.id === el.dataset.id; })[0];
     if (!tc || !String(tc.t||"").trim()) return;
@@ -3351,26 +3425,69 @@ document.addEventListener("click", function(e){
   }
 }, false);
 
+/* 시트에 실제 기록이 몇 줄이나 들어 있는지 셉니다 (머리글 제외) */
+function countSheetRows(tabs){
+  if (!tabs) return 0;
+  var watch = [TABS.students, TABS.att, TABS.journal, TABS.obs, TABS.lessons, TABS.plans,
+               TABS.scores, TABS.tasks, TABS.budgets, TABS.spends, TABS.counsel,
+               TABS.events, TABS.learn, TABS.todos, TABS.links, TABS.memos];
+  var n = 0;
+  watch.forEach(function(name){
+    var g = tabs[name];
+    if (!g || g.length < 2) return;
+    for (var i = 1; i < g.length; i++){
+      var r = g[i] || [], has = false;
+      for (var j = 0; j < r.length; j++){ if (String(r[j]==null?"":r[j]).trim()){ has = true; break; } }
+      if (has) n++;
+    }
+  });
+  return n;
+}
+
+function setConnMsg(text, bad){
+  S.connMsg = text || ""; S.connBad = !!bad;
+  var m = $("#connMsg");
+  if (m){ m.textContent = S.connMsg; m.style.color = bad ? "var(--danger)" : "var(--ink-3)"; }
+}
 function doConnect(btn){
-  var url = ($("#setUrl").value||"").trim();
+  var raw = ($("#setUrl").value||"").trim();
+  var url = normalizeUrl(raw);
   var pw = $("#setPw").value||"";
-  var msg = $("#connMsg");
-  if (!url || !pw){ msg.textContent = "웹앱 주소와 암호를 모두 넣어 주세요."; return; }
+  if (!url || !pw){ setConnMsg("웹앱 주소와 암호를 모두 넣어 주세요.", true); return; }
+  if (url !== raw && $("#setUrl")) $("#setUrl").value = url;   /* 다듬은 주소를 보여 줍니다 */
   btn.disabled = true; btn.textContent = "연결 중…";
+  setConnMsg("");
   api.url = url; api.token = pw;
+  mirrorLocal();
+  var localSnap = readLocal();          /* 이 기기의 기록을 잠시 챙겨 둡니다 */
   api.call({action:"ping"}).then(function(){
     lsSet("classlog:url", url);
     lsSet("classlog:token", pw);
     S.mode = "sheet"; saveFailed = false;
-    ["students","att","journal","obs","tt","seat","info"].forEach(function(k){ dirty[k] = true; });
-    return pushSave().then(loadFromSheet);
-  }).then(function(){
+    /* 먼저 시트를 읽습니다 — 시트에 기록이 있으면 그것이 우선입니다 */
+    return loadFromSheet();
+  }).then(function(j){
+    var rows = countSheetRows(j && j.data && j.data.tabs);
     btn.disabled = false; btn.textContent = "연결하고 지금 기록 올리기";
-    render();
+    if (rows > 0){
+      S.connMsg = "연결했습니다. 시트에 이미 기록이 " + rows + "줄 있어 그대로 불러왔습니다."; S.connBad = false;
+      render(); return;
+    }
+    /* 시트가 비어 있을 때만 이 기기의 기록을 올립니다 */
+    if (localSnap) hydrateLocal(localSnap);
+    ["students","att","journal","obs","tt","seat","info","lessons","plans","scores",
+     "tasks","budgets","spends","counsel","events","learn","todos","links","memos"]
+      .forEach(function(k){ dirty[k] = true; });
+    return pushSave().then(function(){
+      S.connMsg = "연결했습니다. 시트가 비어 있어서 이 기기의 기록을 올렸습니다."; S.connBad = false;
+      render();
+    });
   }).catch(function(err){
     S.mode = "local"; api.token = "";
     btn.disabled = false; btn.textContent = "연결하고 지금 기록 올리기";
-    var m = $("#connMsg"); if (m) m.textContent = apiMessage(err);
+    if (localSnap) hydrateLocal(localSnap);
+    S.connMsg = apiMessage(err); S.connBad = true;
+    render();
   });
 }
 function resizeSeats(rows, cols){
