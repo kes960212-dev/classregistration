@@ -636,6 +636,36 @@ table.roster tr:hover td .btn.ghost{opacity:1}
   .main{padding-left:16px; padding-right:16px; padding-block:18px 60px}
   .ledger{grid-template-columns:1fr 1fr}
 }
+
+/* 캡처로 추가 */
+.cap .capzone{border:1.5px dashed var(--line-strong); border-radius:12px; background:var(--surface-2); min-height:92px; display:flex; align-items:center; justify-content:center; padding:12px; outline:none; transition:border-color .15s, background .15s}
+.cap .capzone:focus, .cap .capzone.over{border-color:var(--accent); background:var(--accent-soft)}
+.cap .capzone.has{justify-content:flex-start}
+.cap .caphint{font-size:13.5px; color:var(--ink-3); text-align:center}
+.cap .caphint b{color:var(--accent)}
+.cap .capthumbs{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+.cap .capthumb{position:relative; width:110px; height:110px; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--surface)}
+.cap .capthumb img{width:100%; height:100%; object-fit:cover; display:block}
+.cap .capthumb .pdf{display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; font-weight:700; color:var(--danger); font-size:15px; text-align:center; padding:4px}
+.cap .capthumb .pdf small{font-weight:400; color:var(--ink-3); font-size:10.5px; word-break:break-all}
+.cap .capthumb button{position:absolute; top:3px; right:3px; background:var(--surface); padding:1px 6px}
+.cap .capmore{font-size:12.5px; color:var(--ink-3)}
+.cap .captext{width:100%; margin-top:10px; resize:vertical; font-size:13.5px}
+.cap .capnote{margin:8px 0 0; font-size:12px; color:var(--ink-3); line-height:1.6}
+.cap .capres{margin-top:14px; border-top:1px solid var(--line); padding-top:12px}
+.cap .capsum{margin:0 0 8px; font-size:13.5px; color:var(--ink-2); line-height:1.6}
+.cap .capitems{display:flex; flex-direction:column; gap:8px}
+.cap .capitem{border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:8px; padding:8px 10px; display:flex; flex-direction:column; gap:6px; background:var(--surface)}
+.cap .capitem.k-event{border-left-color:var(--info)}
+.cap .capitem.k-task{border-left-color:var(--warn)}
+.cap .capitem.off{opacity:.45}
+.cap .capitem .ci1{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+.cap .capitem select, .cap .capitem input:not([type=checkbox]){border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink); padding:5px 7px; font:inherit; font-size:13px; min-width:0}
+.cap .capitem .ctime{width:64px}
+.cap .capitem .ctitle{font-weight:700; font-size:14px}
+.cap .capitem .cmemo{font-size:12.5px; color:var(--ink-2)}
+.cap > header .btn{white-space:nowrap}
+.cap .capcal{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-2)}
 </style>
 </head>
 <body>
@@ -1805,6 +1835,7 @@ function viewToday(){
   }
   h += '</div></section>';
 
+  h += capPanel();
   h += todoPanel();
 
   /* ── 바로가기 · 메모 ── */
@@ -2155,6 +2186,7 @@ function viewTask(){
   var urgent = open.filter(function(t){ return isDate(t.due) && dday(t.due) <= 7; })
     .sort(function(a,b){ return dday(a.due) - dday(b.due); });
 
+  h += '<div style="margin-bottom:16px">' + capPanel() + '</div>';
   /* 마감 임박 */
   h += '<section class="panel" style="margin-bottom:16px"><header><h2>마감 임박</h2>'+
     '<span class="sub">일주일 안이거나 이미 지난 업무</span><span class="spacer"></span>'+
@@ -2982,6 +3014,7 @@ function viewSet(){
   h += '<p style="margin:0; font-size:12.5px; line-height:1.7; color:'+
     (S.connBad ? "var(--danger)" : "var(--ink-3)")+'" id="connMsg">'+esc(S.connMsg||"")+'</p>';
   h += '</div></section></div>';
+  h += aiSetPanel();
 
   h += '<section class="panel" style="margin-top:16px"><header><h2>쓰는 법</h2></header><div class="pbody">'+
     '<ul style="margin:0; padding-left:18px; font-size:13.5px; color:var(--ink-2); line-height:1.85">'+
@@ -2989,6 +3022,7 @@ function viewSet(){
     '<li><b>할 일</b> — 적어 둔 할 일이 <b>오늘 · 지난 날 · 앞으로 · 끝낸 것</b>으로 나뉘어 한 칸에 모두 보입니다. 오늘 것이 맨 위입니다. '+
     '지난 날 것은 「오늘로」나 「모두 오늘로」로 당길 수 있고, 날짜 칸을 고치면 그 날로 옮겨집니다. '+
     '위의 자동 넣기를 켜두면 구글 캘린더에도 같이 들어갑니다.</li>'+
+    '<li><b>캡처로 추가</b> — 공문·메신저 캡처를 화면 어디서든 <b>Ctrl+V</b>로 붙여넣거나 「캡처로 추가」 칸에 끌어 놓고 「AI로 정리하기」를 누르면, Gemini가 읽어 <b>할 일 · 일정 · 업무</b>로 나눠 줍니다. 날짜·내용을 확인하고 고른 것만 추가되며, 캘린더에도 함께 넣을 수 있습니다. 아래 「AI (Gemini) 연결」에 키를 먼저 넣어 주세요.</li>'+
     '<li><b>바로가기 · 메모</b> — 자주 여는 사이트와 기억해 둘 내용을 올려 두는 칸입니다. 날짜와 상관없이 늘 같은 자리에 있습니다.</li>'+
     '<li><b>수업</b> — 한 주를 교시 × 요일 격자로 봅니다. 교과는 시간표에서 자동으로 채워지니 학습내용만 적으시면 됩니다. 다음 주에 미리 적으면 계획, 지나고 고치면 기록입니다.</li>'+
     '<li><b>평가</b> — 평가계획을 먼저 적어 두고, 평가를 골라 학생별로 성취도(매우잘함~노력요함)나 단원평가 점수를 넣습니다. 관찰내용은 학기말 평어 재료가 됩니다.</li>'+
@@ -3007,6 +3041,409 @@ function viewSet(){
     '</ul></div></section>';
   return h;
 }
+
+
+/* ===================== 캡처로 추가 (Gemini) =====================
+   공문·메시지 캡처를 붙여넣거나 끌어 놓으면 Gemini가 읽어
+   할 일 · 일정 · 업무로 나눠 주고, 확인한 것만 추가합니다.
+   API 키는 이 브라우저에만 저장되고 시트에는 올라가지 않습니다. */
+var AI_MODELS = [
+  {id:"gemini-4-argon",   name:"Gemini 4 Argon (최신 · 가장 정확)"},
+  {id:"gemini-3.8-flash", name:"Gemini 3.8 Flash (빠르고 저렴)"}
+];
+var AI_DEFAULT = "gemini-4-argon";
+var AI_FALLBACK = "gemini-3.8-flash";
+var CAP_KIND = {todo:"할 일", event:"일정", task:"업무"};
+
+var ai = {
+  key: lsGet("classlog:aiKey") || "",
+  model: lsGet("classlog:aiModel") || AI_DEFAULT
+};
+S.cap = {files:[], text:"", busy:false, items:[], summary:"", docno:"", err:"", used:"", toCal:true, note:""};
+
+function capReset(){
+  S.cap.files = []; S.cap.text = ""; S.cap.items = []; S.cap.summary = "";
+  S.cap.docno = ""; S.cap.err = ""; S.cap.used = ""; S.cap.note = "";
+}
+
+/* ── 파일 받기: 큰 사진은 줄여서 보냅니다 ── */
+function capAddFiles(list){
+  var arr = Array.prototype.slice.call(list || []);
+  arr = arr.filter(function(f){ return /^image\//.test(f.type) || f.type === "application/pdf"; });
+  if (!arr.length) return Promise.resolve(0);
+  return Promise.all(arr.map(capReadFile)).then(function(rs){
+    rs.forEach(function(r){ if (r) S.cap.files.push(r); });
+    S.cap.err = ""; S.cap.items = []; S.cap.summary = "";
+    return rs.length;
+  });
+}
+function capReadFile(f){
+  return new Promise(function(resolve){
+    var fr = new FileReader();
+    fr.onload = function(){
+      var url = fr.result;
+      if (f.type === "application/pdf"){
+        if (f.size > 15*1024*1024){ S.cap.err = "PDF가 너무 큽니다(15MB까지)."; return resolve(null); }
+        return resolve({id:uid(), name:f.name||"공문.pdf", mime:f.type, data:url.split(",")[1], url:""});
+      }
+      var img = new Image();
+      img.onload = function(){
+        var max = 2200, w = img.naturalWidth, h = img.naturalHeight;
+        if (Math.max(w,h) <= max && f.size < 3*1024*1024){
+          return resolve({id:uid(), name:f.name||"캡처", mime:f.type, data:url.split(",")[1], url:url});
+        }
+        var sc = max / Math.max(w,h); if (sc > 1) sc = 1;
+        var c = document.createElement("canvas");
+        c.width = Math.round(w*sc); c.height = Math.round(h*sc);
+        var g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0,0,c.width,c.height);
+        g.drawImage(img, 0, 0, c.width, c.height);
+        var out = c.toDataURL("image/jpeg", 0.9);
+        resolve({id:uid(), name:f.name||"캡처", mime:"image/jpeg", data:out.split(",")[1], url:out});
+      };
+      img.onerror = function(){ resolve(null); };
+      img.src = url;
+    };
+    fr.onerror = function(){ resolve(null); };
+    fr.readAsDataURL(f);
+  });
+}
+
+/* ── Gemini 호출 ──
+   AIza… 키와 새 형식 AQ.… 키 모두 x-goog-api-key 머리글로 보냅니다. */
+function capPrompt(){
+  var c = S.cls, me = c.teacher || "";
+  var who = [c.school, c.grade ? c.grade+"학년" : "", c.klass ? c.klass+"반" : ""].filter(Boolean).join(" ");
+  var t = todayISO();
+  return [
+    "너는 초등학교 교사의 업무 비서다. 첨부한 공문·메시지·안내문 캡처(또는 붙여넣은 글)를 읽고, 이 교사가 챙겨야 할 것을 뽑아 JSON으로만 답한다.",
+    "교사: " + (who || "초등학교") + " 담임" + (me ? " " + me : "") + ".",
+    "오늘: " + t + " (" + DOW[dowOf(t)] + "요일). 연도가 없는 날짜는 오늘과 가장 가까운 앞날로 본다.",
+    "",
+    "분류 규칙",
+    "- event(일정): 정해진 날짜·시각에 참석·진행하는 것. 연수, 회의, 행사, 출장, 시험, 수업공개 등. time에 시작 시각, end에 끝나는 날(여러 날일 때만), place에 장소.",
+    "- task(업무): 공문으로 처리해야 할 일. 제출·보고·회신·신청·결재처럼 마감이 있는 것. date에 마감일, time에 마감 시각(있으면).",
+    "- todo(할 일): 위 일을 하기 위해 교사가 그 전에 해야 할 준비. 교직원 안내, 출장 상신, 수업 조정, 서류 작성 등. date는 하기 좋은 날(마감 2~3일 전, 오늘보다 앞이면 오늘).",
+    "- 명단이나 여러 사람 안내가 있으면 이 교사(" + (me || "담임") + ")와 이 학교에 해당하는 것만 뽑는다. 해당이 없으면 그 사실을 summary에 적는다.",
+    "- 단순 참고·홍보만 있고 할 일이 없으면 items를 빈 배열로 둔다.",
+    "",
+    "작성 규칙",
+    "- date, end는 YYYY-MM-DD, time은 24시간 HH:MM. 모르면 빈 문자열.",
+    "- title은 20자 안팎의 짧은 한국어 명사구. 예: '심폐소생술 실기 연수', '우수사례 공모전 제출'.",
+    "- memo에는 준비물·제출 방법·문의처·대상 등 꼭 필요한 것만 한 줄로.",
+    "- docno에는 문서번호(예: 천안쌍정초등학교-12702)가 보이면 적는다.",
+    "- summary는 이 자료가 무엇인지 한두 문장."
+  ].join("\n");
+}
+var CAP_SCHEMA = {
+  type:"OBJECT",
+  properties:{
+    summary:{type:"STRING"},
+    docno:{type:"STRING"},
+    items:{type:"ARRAY", items:{type:"OBJECT", properties:{
+      kind:{type:"STRING", enum:["todo","event","task"]},
+      title:{type:"STRING"}, date:{type:"STRING"}, end:{type:"STRING"},
+      time:{type:"STRING"}, place:{type:"STRING"}, memo:{type:"STRING"}
+    }, required:["kind","title","date"]}}
+  },
+  required:["summary","items"]
+};
+function geminiCall(model, parts, withThinking){
+  var gen = {responseMimeType:"application/json", responseSchema:CAP_SCHEMA, temperature:0.2};
+  if (withThinking) gen.thinkingConfig = {thinkingLevel:"low"};
+  return fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent", {
+    method:"POST",
+    headers:{"Content-Type":"application/json", "x-goog-api-key":ai.key.trim()},
+    body: JSON.stringify({contents:[{role:"user", parts:parts}], generationConfig:gen})
+  }).then(function(r){
+    return r.text().then(function(t){
+      var j = null; try{ j = JSON.parse(t); }catch(e){}
+      if (!r.ok){
+        var m = (j && j.error && j.error.message) || t.slice(0,200);
+        throw {status:r.status, message:m};
+      }
+      var cand = j && j.candidates && j.candidates[0];
+      var txt = cand && cand.content && (cand.content.parts||[]).map(function(p){ return p.thought ? "" : (p.text||""); }).join("");
+      if (!txt) throw {status:0, message:"AI가 빈 답을 보냈습니다" + (cand && cand.finishReason ? " ("+cand.finishReason+")" : "")};
+      txt = txt.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "");
+      return JSON.parse(txt);
+    });
+  });
+}
+function capAnalyze(){
+  if (!ai.key.trim()){ S.cap.err = "설정 탭에서 Gemini API 키를 먼저 넣어 주세요."; render(); return; }
+  if (!S.cap.files.length && !S.cap.text.trim()){ S.cap.err = "캡처나 글을 먼저 넣어 주세요."; render(); return; }
+  var parts = [{text:capPrompt()}];
+  if (S.cap.text.trim()) parts.push({text:"[붙여넣은 글]\n" + S.cap.text.trim()});
+  S.cap.files.forEach(function(f){ parts.push({inlineData:{mimeType:f.mime, data:f.data}}); });
+
+  S.cap.busy = true; S.cap.err = ""; S.cap.items = []; S.cap.note = ""; render();
+  var model = ai.model || AI_DEFAULT;
+  function attempt(m, think){
+    return geminiCall(m, parts, think).then(function(res){ return {res:res, model:m}; }, function(err){
+      /* thinking 설정을 모르는 모델이면 빼고 한 번 더 */
+      if (think && err.status === 400 && /think/i.test(err.message||"")) return attempt(m, false);
+      /* 최신 모델을 쓸 수 없는 키(무료 등급·권한)면 Flash로 한 번 더 */
+      if (m !== AI_FALLBACK && (err.status === 404 || err.status === 429 || err.status === 403 || /quota|not found|limit/i.test(err.message||""))){
+        S.cap.note = m + " 를 쓸 수 없어 " + AI_FALLBACK + " 로 읽었습니다. (" + (err.message||err.status) + ")";
+        return attempt(AI_FALLBACK, think);
+      }
+      throw err;
+    });
+  }
+  attempt(model, true).then(function(o){
+    var r = o.res || {};
+    S.cap.busy = false;
+    S.cap.used = o.model;
+    S.cap.summary = r.summary || "";
+    S.cap.docno = r.docno || "";
+    S.cap.items = (r.items||[]).map(function(x){
+      return {id:uid(), on:true, kind:CAP_KIND[x.kind] ? x.kind : "todo",
+        title:String(x.title||"").trim(), date:isDate(x.date) ? x.date : "",
+        end:isDate(x.end) ? x.end : "", time:/^\d{1,2}:\d{2}$/.test(x.time||"") ? x.time : "",
+        place:x.place||"", memo:x.memo||""};
+    });
+    if (!S.cap.items.length) S.cap.err = "챙길 일을 찾지 못했습니다." + (S.cap.summary ? " — " + S.cap.summary : "");
+    render();
+  }).catch(function(err){
+    S.cap.busy = false;
+    var m = err && err.message ? err.message : String(err);
+    if (err && (err.status === 400 || err.status === 401) && /key|credential|auth|token/i.test(m)) m = "API 키를 확인해 주세요. (" + m + ")";
+    else if (err && err.status === 429) m = "사용량 한도에 걸렸습니다. 잠시 뒤 다시 하거나 설정에서 모델을 바꿔 주세요. (" + m + ")";
+    else if (/Failed to fetch|NetworkError/i.test(m)) m = "AI 서버에 닿지 못했습니다. 인터넷 연결을 확인해 주세요.";
+    S.cap.err = "읽지 못했습니다. " + m;
+    render();
+  });
+}
+
+/* ── 확인한 것만 추가 ── */
+function capCommit(){
+  var pick = S.cap.items.filter(function(x){ return x.on && x.title && isDate(x.date); });
+  if (!pick.length){ alertChip("날짜와 내용이 있는 항목을 골라 주세요."); return; }
+  var docno = S.cap.docno, newTodos = [], newEvents = [], newTasks = [], touched = {};
+  pick.forEach(function(x){
+    var memo = [x.memo, docno && x.kind !== "task" ? docno : ""].filter(Boolean).join(" · ");
+    if (x.place && memo.indexOf(x.place) < 0) memo = [x.place, memo].filter(Boolean).join(" · ");
+    if (x.kind === "event"){
+      var e = {id:uid(), date:x.date, end:x.end||"", time:x.time||"", title:x.title,
+        kind:/연수/.test(x.title) ? "연수" : /출장/.test(x.title) ? "출장" : "학교",
+        place:x.place||"", memo:memo, cal:false};
+      S.events.push(e); newEvents.push(e); touched.events = 1;
+    } else if (x.kind === "task"){
+      var k = {id:uid(), reg:todayISO(), kind:"공문", name:x.title, owner:S.cls.teacher||"",
+        due:x.date, status:"대기", budget:"", docno:docno, link:"",
+        memo:[x.time ? x.time+" 마감" : "", x.memo].filter(Boolean).join(" · ")};
+      S.tasks.push(k); newTasks.push(k); touched.tasks = 1;
+    } else {
+      var t = {id:uid(), date:x.date, t:(x.time ? x.time+" " : "") + x.title, done:false, cal:false, memo:memo};
+      S.todos.push(t); newTodos.push(t); touched.todos = 1; touched.journal = 1;
+    }
+  });
+  markDirty.apply(null, Object.keys(touched));
+  var msg = pick.length + "건을 추가했습니다";
+  var wantCal = S.cap.toCal;
+  capReset(); render();
+  if (wantCal && S.mode === "sheet"){
+    var items = [];
+    newTodos.forEach(function(t){ items.push({date:t.date, title:"[할 일] " + t.t, memo:t.memo}); });
+    newEvents.forEach(function(e){ items.push({date:e.date, end:e.end, time:e.time, title:e.title, place:e.place, memo:e.memo}); });
+    newTasks.forEach(function(k){ items.push({date:k.due, title:"[마감] " + k.name, memo:[k.docno, k.memo].filter(Boolean).join(" · ")}); });
+    api.call({action:"calpush", items:items}).then(function(j){
+      newTodos.forEach(function(t){ t.cal = true; });
+      newEvents.forEach(function(e){ e.cal = true; });
+      if (newTodos.length) markDirty("todos");
+      if (newEvents.length) markDirty("events");
+      alertChip(msg + " · 캘린더 「" + (j.calendar||"구글 캘린더") + "」에 " + ((j.made||[]).length || items.length) + "건");
+      render();
+    }).catch(function(err){
+      alertChip(msg + ". 캘린더에는 넣지 못했습니다 — " + apiMessage(err));
+    });
+  } else {
+    alertChip(msg + (wantCal && S.mode !== "sheet" ? " (캘린더는 시트 연결 후 가능)" : ""));
+  }
+}
+
+/* ── 화면 ── */
+function capPanel(){
+  var c = S.cap, h = "";
+  h += '<section class="panel cap"><header><h2>캡처로 추가</h2>'+
+    '<span class="sub">공문·메시지 캡처를 붙여넣거나 끌어 놓습니다</span><span class="spacer"></span>'+
+    '<button class="btn tiny" data-act="cap-pick">파일 고르기</button>'+
+    (c.files.length || c.text || c.items.length ? '<button class="btn tiny ghost" data-act="cap-clear">비우기</button>' : '')+
+    '</header><div class="pbody">';
+  if (!ai.key) h += '<div class="notice" style="margin-bottom:10px"><span>ⓘ</span><div><b>Gemini API 키가 필요합니다.</b> '+
+    '<button class="btn tiny" data-act="cap-goset">설정에서 넣기</button></div></div>';
+
+  h += '<div class="capzone'+(c.files.length?' has':'')+'" id="capZone" tabindex="0">';
+  if (!c.files.length) h += '<div class="caphint"><b>Ctrl+V</b>로 붙여넣거나 이미지·PDF를 여기에 끌어 놓기</div>';
+  else {
+    h += '<div class="capthumbs">';
+    c.files.forEach(function(f){
+      h += '<div class="capthumb">'+(f.url ? '<img src="'+f.url+'" alt="">' : '<span class="pdf">PDF<br><small>'+esc(f.name)+'</small></span>')+
+        '<button class="btn tiny ghost" data-act="cap-rm" data-id="'+f.id+'" aria-label="빼기">✕</button></div>';
+    });
+    h += '<div class="capmore">＋ 더 붙여넣기</div></div>';
+  }
+  h += '</div>';
+  h += '<textarea class="input captext" id="capText" rows="2" placeholder="메시지 글을 그대로 붙여넣어도 됩니다">'+esc(c.text)+'</textarea>';
+  h += '<div class="row" style="margin-top:10px"><button class="btn primary" data-act="cap-run"'+
+    (c.busy || (!c.files.length && !c.text.trim()) ? ' disabled' : '')+'>'+
+    (c.busy ? '읽는 중…' : 'AI로 정리하기')+'</button>'+
+    '<span style="font-size:12px; color:var(--ink-3)">'+esc(c.busy ? (ai.model||AI_DEFAULT) : (c.used ? "읽은 모델: "+c.used : ""))+'</span></div>';
+  if (c.note) h += '<p class="capnote">'+esc(c.note)+'</p>';
+  if (c.err) h += '<div class="notice bad" style="margin-top:10px"><span>!</span><div>'+esc(c.err)+'</div></div>';
+
+  if (c.items.length){
+    h += '<div class="capres">';
+    if (c.summary || c.docno) h += '<p class="capsum">'+(c.docno ? '<b>'+esc(c.docno)+'</b> ' : '')+esc(c.summary)+'</p>';
+    h += '<div class="capitems">';
+    c.items.forEach(function(x){
+      h += '<div class="capitem k-'+x.kind+(x.on?'':' off')+'">'+
+        '<div class="ci1"><input type="checkbox" data-act="cap-on" data-id="'+x.id+'"'+(x.on?' checked':'')+' aria-label="추가">'+
+        '<select data-act="cap-f" data-id="'+x.id+'" data-k="kind" aria-label="종류">'+
+          Object.keys(CAP_KIND).map(function(k){ return '<option value="'+k+'"'+(x.kind===k?' selected':'')+'>'+CAP_KIND[k]+'</option>'; }).join("")+
+        '</select>'+
+        '<input type="date" data-act="cap-f" data-id="'+x.id+'" data-k="date" value="'+esc(x.date)+'" aria-label="날짜">'+
+        '<input class="ctime" data-act="cap-f" data-id="'+x.id+'" data-k="time" value="'+esc(x.time)+'" placeholder="시각" aria-label="시각"></div>'+
+        '<input class="ctitle" data-act="cap-f" data-id="'+x.id+'" data-k="title" value="'+esc(x.title)+'" aria-label="내용">'+
+        '<input class="cmemo" data-act="cap-f" data-id="'+x.id+'" data-k="memo" value="'+esc([x.place, x.memo].filter(Boolean).join(" · "))+'" placeholder="메모" aria-label="메모">'+
+        '</div>';
+    });
+    h += '</div>';
+    var n = c.items.filter(function(x){ return x.on; }).length;
+    h += '<div class="row" style="margin-top:10px">'+
+      '<label class="capcal"><input type="checkbox" data-act="cap-tocal"'+(c.toCal?' checked':'')+'> 구글 캘린더에도 넣기</label>'+
+      '<span class="spacer" style="margin-left:auto"></span>'+
+      '<button class="btn primary" data-act="cap-commit"'+(n?'':' disabled')+'>골라 둔 '+n+'건 추가</button></div>'+
+      '<p class="capnote">할 일은 「할 일」에, 일정은 「캘린더」에, 업무는 「업무·예산」에 들어갑니다.</p>';
+    h += '</div>';
+  }
+  h += '<input type="file" id="capFile" accept="image/*,application/pdf" multiple hidden>';
+  return h + '</div></section>';
+}
+
+/* 설정 탭 칸 */
+function aiSetPanel(){
+  var masked = ai.key ? ai.key.slice(0,4) + "…" + ai.key.slice(-4) : "";
+  return '<section class="panel" style="margin-top:16px"><header><h2>AI (Gemini) 연결</h2><span class="spacer"></span>'+
+    '<span class="sub" style="color:'+(ai.key?"var(--accent)":"var(--warn)")+'; font-weight:700">'+(ai.key?"키 있음":"키 없음")+'</span></header>'+
+    '<div class="pbody stack">'+
+    '<div class="field"><label for="aiKey">Gemini API 키</label>'+
+      '<input class="input" type="password" id="aiKey" autocomplete="off" placeholder="'+(masked ? "저장됨 "+esc(masked)+" — 바꿀 때만 입력" : "AQ.… 또는 AIza…")+'"></div>'+
+    '<div class="field"><label for="aiModel">모델</label><select class="input" id="aiModel">'+
+      AI_MODELS.map(function(m){ return '<option value="'+m.id+'"'+(ai.model===m.id?' selected':'')+'>'+esc(m.name)+'</option>'; }).join("")+
+    '</select></div>'+
+    '<div class="row"><button class="btn primary" data-act="ai-save">저장</button>'+
+      '<button class="btn" data-act="ai-test"'+(ai.key?'':' disabled')+'>연결 확인</button>'+
+      (ai.key ? '<button class="btn ghost" data-act="ai-clear">키 지우기</button>' : '')+'</div>'+
+    '<p style="margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-3)" id="aiMsg">'+esc(S.aiMsg||"")+'</p>'+
+    '<p style="margin:0; font-size:12.5px; line-height:1.7; color:var(--ink-3)">'+
+      '키는 <b>이 브라우저에만</b> 저장되고 시트에는 올라가지 않습니다. 다른 기기에서는 한 번 더 넣어 주세요. '+
+      'Google AI Studio에서 만든 키(AQ.… 새 형식도 됨)를 그대로 붙여넣으면 됩니다. '+
+      '최신 모델을 쓸 수 없는 키면 자동으로 Flash 모델로 바꿔 읽습니다.</p>'+
+    '</div></section>';
+}
+
+/* ── 이벤트 ── */
+document.addEventListener("click", function(e){
+  var el = e.target.closest("[data-act]");
+  if (!el) return;
+  var a = el.dataset.act;
+  if (a === "cap-pick"){ var fi = $("#capFile"); if (fi) fi.click(); return; }
+  if (a === "cap-clear"){ capReset(); render(); return; }
+  if (a === "cap-rm"){ S.cap.files = S.cap.files.filter(function(f){ return f.id !== el.dataset.id; }); render(); return; }
+  if (a === "cap-run"){ capAnalyze(); return; }
+  if (a === "cap-commit"){ capCommit(); return; }
+  if (a === "cap-goset"){ S.tab = "set"; render(); window.scrollTo(0, document.body.scrollHeight); return; }
+  if (a === "ai-save"){
+    var k = ($("#aiKey")||{}).value || "", m = ($("#aiModel")||{}).value || AI_DEFAULT;
+    k = k.replace(/\s+/g, "");
+    if (k) ai.key = k;
+    ai.model = m;
+    lsSet("classlog:aiKey", ai.key); lsSet("classlog:aiModel", ai.model);
+    S.aiMsg = ai.key ? "저장했습니다. 「연결 확인」으로 키가 되는지 볼 수 있습니다." : "키를 입력해 주세요.";
+    render(); return;
+  }
+  if (a === "ai-clear"){ ai.key = ""; lsDel("classlog:aiKey"); S.aiMsg = "이 브라우저에서 키를 지웠습니다."; render(); return; }
+  if (a === "ai-test"){
+    S.aiMsg = "확인 중…"; render();
+    fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(ai.model) + ":generateContent", {
+      method:"POST", headers:{"Content-Type":"application/json", "x-goog-api-key":ai.key},
+      body: JSON.stringify({contents:[{role:"user", parts:[{text:"'좋아요' 한 단어로만 답해."}]}]})
+    }).then(function(r){ return r.text().then(function(t){ return {ok:r.ok, status:r.status, t:t}; }); })
+      .then(function(o){
+        if (o.ok) S.aiMsg = "연결되었습니다 — " + ai.model + " 를 씁니다.";
+        else {
+          var j = null; try{ j = JSON.parse(o.t); }catch(e){}
+          S.aiMsg = "연결되지 않았습니다 (" + o.status + "). " + ((j && j.error && j.error.message) || "") +
+            (ai.model !== AI_FALLBACK && (o.status === 429 || o.status === 404) ? " — 모델을 " + AI_FALLBACK + " 로 바꿔 보세요." : "");
+        }
+        render();
+      }).catch(function(){ S.aiMsg = "AI 서버에 닿지 못했습니다."; render(); });
+    return;
+  }
+});
+document.addEventListener("change", function(e){
+  var el = e.target, a = el.dataset ? el.dataset.act : null;
+  if (el.id === "capFile"){ capAddFiles(el.files).then(function(){ render(); }); return; }
+  if (a === "cap-on"){
+    S.cap.items.forEach(function(x){ if (x.id === el.dataset.id) x.on = el.checked; });
+    render(); return;
+  }
+  if (a === "cap-tocal"){ S.cap.toCal = el.checked; return; }
+  if (a === "cap-f" && el.dataset.k === "kind"){
+    S.cap.items.forEach(function(x){ if (x.id === el.dataset.id) x.kind = el.value; });
+    return;
+  }
+});
+document.addEventListener("input", function(e){
+  var el = e.target, a = el.dataset ? el.dataset.act : null;
+  if (el.id === "capText"){
+    S.cap.text = el.value;
+    var btn = $('[data-act="cap-run"]');
+    if (btn && !S.cap.busy) btn.disabled = !S.cap.files.length && !S.cap.text.trim();
+    return;
+  }
+  if (a === "cap-f"){
+    S.cap.items.forEach(function(x){ if (x.id === el.dataset.id){ x[el.dataset.k] = el.value; if (el.dataset.k === "memo") x.place = ""; } });
+  }
+});
+/* 어디서든 Ctrl+V — 글 칸에 쓰는 중이 아니면 캡처로 받습니다 */
+document.addEventListener("paste", function(e){
+  var cd = e.clipboardData; if (!cd) return;
+  var files = [];
+  Array.prototype.forEach.call(cd.items || [], function(it){
+    if (it.kind === "file"){ var f = it.getAsFile(); if (f && (/^image\//.test(f.type) || f.type === "application/pdf")) files.push(f); }
+  });
+  if (!files.length) return;
+  var t = e.target;
+  var typing = t && (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !/checkbox|radio|button|file/.test(t.type)));
+  if (typing && t.id !== "capText") return;
+  var app = $("#app"); if (app && app.hidden) return;
+  e.preventDefault();
+  capAddFiles(files).then(function(){
+    if (S.tab !== "today" && S.tab !== "task"){ S.tab = "today"; }
+    render();
+    var z = $("#capZone"); if (z) z.scrollIntoView({block:"center", behavior:"smooth"});
+  });
+});
+document.addEventListener("dragover", function(e){
+  var z = e.target.closest && e.target.closest("#capZone");
+  if (!z) return;
+  e.preventDefault(); z.classList.add("over");
+});
+document.addEventListener("dragleave", function(e){
+  var z = e.target.closest && e.target.closest("#capZone");
+  if (z) z.classList.remove("over");
+});
+document.addEventListener("drop", function(e){
+  var z = e.target.closest && e.target.closest("#capZone");
+  if (!z) return;
+  e.preventDefault();
+  capAddFiles(e.dataTransfer && e.dataTransfer.files).then(function(n){
+    if (!n){ S.cap.err = "이미지나 PDF만 넣을 수 있습니다."; }
+    render();
+  });
+});
 
 /* ===================== board mode ===================== */
 function openBoard(){
